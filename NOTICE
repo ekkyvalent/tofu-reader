@@ -1,0 +1,16 @@
+Tofu Reader
+
+Tofu Reader is a personal fork of CrossPoint Reader, maintained by Ekky Pramana for
+one Xteink X4 Pro unit. It is not affiliated with, endorsed by, or supported by the
+CrossPoint Reader organization, its contributors, or Xteink.
+
+  Upstream project:   https://github.com/crosspoint-reader/crosspoint-reader
+  Base of this fork:  upstream tag 2.0.0rc (commit 91ed3ef)
+
+Licensing. The upstream firmware and the FreeInk SDK are MIT licensed. The original
+MIT copyright notice in LICENSE is preserved unchanged and covers all upstream code
+in this repository. Copyright (c) 2026 Ekky Pramana covers the changes made in this
+fork; those changes are released under the same MIT terms.
+
+This repository ships no vendor firmware images, no bootloader dumps and no
+proprietary blobs from the device manufacturer.
