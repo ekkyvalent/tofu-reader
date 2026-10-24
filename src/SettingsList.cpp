@@ -228,6 +228,35 @@ void forEachBaseSetting(SettingVisitor visit, void* context) {
 #endif
   emit(SettingInfo::Toggle(StrId::STR_FRONTLIGHT, &CrossPointSettings::frontlightOn, "frontlightOn"));
 
+  // Frontlight presets (see FrontlightPresets.h): persisted and web-exposed,
+  // edited from Settings -> Display -> Frontlight presets.
+  emit(SettingInfo::Value(StrId::STR_PRESET_MODE, &CrossPointSettings::frontlightPreset0Mode, {0, 1, 1},
+                          "frontlightPreset0Mode"));
+  emit(SettingInfo::Value(StrId::STR_PRESET_MODE, &CrossPointSettings::frontlightPreset1Mode, {0, 1, 1},
+                          "frontlightPreset1Mode"));
+  emit(SettingInfo::Value(StrId::STR_PRESET_MODE, &CrossPointSettings::frontlightPreset2Mode, {0, 1, 1},
+                          "frontlightPreset2Mode"));
+  emit(SettingInfo::Value(StrId::STR_PRESET_MODE, &CrossPointSettings::frontlightPreset3Mode, {0, 1, 1},
+                          "frontlightPreset3Mode"));
+  emit(SettingInfo::Value(StrId::STR_BRIGHTNESS, &CrossPointSettings::frontlightPreset0Brightness, {0, 100, 5},
+                          "frontlightPreset0Brightness"));
+  emit(SettingInfo::Value(StrId::STR_BRIGHTNESS, &CrossPointSettings::frontlightPreset1Brightness, {0, 100, 5},
+                          "frontlightPreset1Brightness"));
+  emit(SettingInfo::Value(StrId::STR_BRIGHTNESS, &CrossPointSettings::frontlightPreset2Brightness, {0, 100, 5},
+                          "frontlightPreset2Brightness"));
+  emit(SettingInfo::Value(StrId::STR_BRIGHTNESS, &CrossPointSettings::frontlightPreset3Brightness, {0, 100, 5},
+                          "frontlightPreset3Brightness"));
+#if FREEINK_CAP_WARMLIGHT
+  emit(SettingInfo::Value(StrId::STR_WARMTH, &CrossPointSettings::frontlightPreset0Warmth, {0, 100, 5},
+                          "frontlightPreset0Warmth"));
+  emit(SettingInfo::Value(StrId::STR_WARMTH, &CrossPointSettings::frontlightPreset1Warmth, {0, 100, 5},
+                          "frontlightPreset1Warmth"));
+  emit(SettingInfo::Value(StrId::STR_WARMTH, &CrossPointSettings::frontlightPreset2Warmth, {0, 100, 5},
+                          "frontlightPreset2Warmth"));
+  emit(SettingInfo::Value(StrId::STR_WARMTH, &CrossPointSettings::frontlightPreset3Warmth, {0, 100, 5},
+                          "frontlightPreset3Warmth"));
+#endif
+
   // --- KOReader Sync (web-only, uses KOReaderCredentialStore) ---
   emit(SettingInfo::DynamicString(
       StrId::STR_KOREADER_USERNAME, [] { return KOREADER_STORE.getUsername(); },

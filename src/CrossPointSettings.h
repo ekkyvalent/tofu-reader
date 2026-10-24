@@ -284,7 +284,7 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
   // power button for shortPwrBtn actions without the double-click wait.
   uint8_t doubleClickPwrLight = 1;
   uint8_t homeButtonTapAction = static_cast<uint8_t>(HomeButtonAction::Home);
-  uint8_t homeButtonDoubleTapAction = static_cast<uint8_t>(HomeButtonAction::ToggleFrontlight);
+  uint8_t homeButtonDoubleTapAction = static_cast<uint8_t>(HomeButtonAction::CycleFrontlightPreset);
   uint8_t homeButtonLongPressAction = static_cast<uint8_t>(HomeButtonAction::ReaderMenu);
   // EPUB reading orientation settings
   // 0 = portrait (default), 1 = landscape clockwise, 2 = inverted, 3 = landscape counter-clockwise
@@ -386,6 +386,20 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
   // Restore the saved on/off state after a normal boot or wake. Brightness and
   // warmth are always remembered even when this is disabled.
   uint8_t frontlightRestoreOnWake = 1;
+  // Four frontlight presets cycled by HomeButtonAction::CycleFrontlightPreset
+  // (see FrontlightPresets.h). Mode: 0 = off, 1 = custom.
+  uint8_t frontlightPreset0Mode = 1;
+  uint8_t frontlightPreset1Mode = 1;
+  uint8_t frontlightPreset2Mode = 1;
+  uint8_t frontlightPreset3Mode = 0;
+  uint8_t frontlightPreset0Brightness = 100;
+  uint8_t frontlightPreset1Brightness = 60;
+  uint8_t frontlightPreset2Brightness = 25;
+  uint8_t frontlightPreset3Brightness = 0;
+  uint8_t frontlightPreset0Warmth = 30;
+  uint8_t frontlightPreset1Warmth = 60;
+  uint8_t frontlightPreset2Warmth = 85;
+  uint8_t frontlightPreset3Warmth = 50;
   // What the slide switch controls (boards with one): frontlight on/off or
   // night mode. The switch's position is applied at boot and on each change.
   enum SLIDE_SWITCH_ACTION : uint8_t {

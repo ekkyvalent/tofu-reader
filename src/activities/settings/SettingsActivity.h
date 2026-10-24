@@ -32,6 +32,7 @@ enum class SettingAction {
   KeyboardLayouts,
   HomeButton,
   About,
+  FrontlightPresets,
 };
 
 struct SettingInfo {

@@ -5,6 +5,7 @@
 #include <GfxRenderer.h>
 #include <HalClock.h>
 #include <HalDisplay.h>
+#include <HalFrontlight.h>
 #include <Logging.h>
 #include <Memory.h>
 #include <WiFi.h>
@@ -20,6 +21,7 @@
 #include "ClockSettingsActivity.h"
 #include "CrossPointSettings.h"
 #include "FontDownloadActivity.h"
+#include "FrontlightPresetsActivity.h"
 #include "HomeButtonSettingsActivity.h"
 #include "KOReaderSettingsActivity.h"
 #include "KeyboardLayoutsActivity.h"
@@ -121,6 +123,10 @@ void SettingsActivity::rebuildSettings() {
   for (auto& setting : all) {
     if (sectionFor(setting) != section || !showOnDevice(setting)) continue;
     settings.push_back(std::move(setting));
+  }
+
+  if (Frontlight.present()) {
+    addAction(SettingsSection::Display, StrId::STR_FRONTLIGHT_PRESETS, SettingAction::FrontlightPresets);
   }
 
   // Clock configuration only exists where the RTC probe found hardware.
@@ -404,6 +410,13 @@ void SettingsActivity::toggleSelectedSetting() {
           startActivityForResult(std::move(activity), nullptr);
         } else {
           LOG_ERR("SETTINGS", "OOM: AboutActivity");
+        }
+        break;
+      case SettingAction::FrontlightPresets:
+        if (auto activity = makeUniqueNoThrow<FrontlightPresetsActivity>(renderer, mappedInput)) {
+          startActivityForResult(std::move(activity), [this](const ActivityResult&) { requestUpdate(); });
+        } else {
+          LOG_ERR("SETTINGS", "OOM: FrontlightPresetsActivity");
         }
         break;
       case SettingAction::None:

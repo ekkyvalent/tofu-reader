@@ -32,6 +32,7 @@
 
 #include "CrossPointSettings.h"
 #include "CrossPointState.h"
+#include "FrontlightPresets.h"
 #include "KOReaderCredentialStore.h"
 #include "LcpPassphraseStore.h"
 #include "MappedInputManager.h"
@@ -1042,6 +1043,9 @@ void loop() {
   // Refresh screen when power button is short-pressed with FORCE_REFRESH setting.
   if (mappedInputManager.homeButtonAction() == HomeButtonAction::ToggleFrontlight) {
     toggleFrontlight();
+  }
+  if (mappedInputManager.homeButtonAction() == HomeButtonAction::CycleFrontlightPreset) {
+    frontlight_presets::cycle();
   }
   if (mappedInputManager.homeButtonAction() == HomeButtonAction::Refresh ||
       (SETTINGS.shortPwrBtn == CrossPointSettings::SHORT_PWRBTN::FORCE_REFRESH &&
