@@ -97,6 +97,8 @@ USB port or browser before assuming the device is locked. Only reach for the unl
 
 ## Install firmware
 
+> **Xteink X4 Pro only.** These builds are compiled for the `x4pro` environment (ESP32-S3). Do not flash them on an X3, X4, or Picco, which run different chips.
+
 ### Web installer (recommended)
 
 1. Connect your device to your computer via USB-C and wake/unlock the device
@@ -163,6 +165,34 @@ To make `.cpfont` files:
 Conversion runs the firmware repo's `lib/EpdFont/scripts/fontconvert_sdcard.py` script unmodified, so output matches a local host build.
 
 ---
+
+## Credits and licenses
+
+This firmware exists because of other people's work. Everything here is MIT unless noted otherwise.
+
+**Upstream.** Tofu Reader is a fork of [CrossPoint Reader](https://github.com/crosspoint-reader/crosspoint-reader), Copyright (c) 2025 CrossPoint Reader organization, MIT licensed. The reading engine, UI, device support and documentation are upstream's work. This fork is based on upstream tag `2.0.0rc` (commit `91ed3ef`).
+
+**FreeInk SDK.** The hardware abstraction layer, display drivers, SD card, network and font stacks come from [freeink-sdk](https://github.com/Free-Ink/freeink-sdk), Copyright (c) 2026 FreeInk, MIT licensed. It vendors expat (MIT) and, through FreeInkFont, FreeType (FreeType License) and stb_truetype (public domain / MIT).
+
+**Fonts.** Noto Sans, Noto Serif, Noto Sans Arabic, Noto Sans Hebrew and OpenDyslexic ship under the SIL Open Font License 1.1, with the license text beside each family in `lib/EpdFont/builtinFonts/source/*/OFL.txt`.
+
+**Libraries**, pinned in `platformio.ini`:
+
+| Library | License |
+| --- | --- |
+| ArduinoJson 7.4.2 | MIT |
+| SdFat 2.3.1 | MIT |
+| QRCode 0.0.1 | MIT |
+| PNGdec 1.1.6 | Apache-2.0 |
+| JPEGDEC | Apache-2.0 |
+| AnimatedGIF | Apache-2.0 |
+| NimBLE-Arduino | Apache-2.0 |
+| arduinoWebSockets 2.7.3 | LGPL-2.1 |
+| Arduino-wolfSSL (wolfSSL 5.7.2) | GPL-2.0, or commercial from wolfSSL |
+
+wolfSSL is the one copyleft dependency that matters when redistributing: the full source ships in this tree, and a binary built from it carries GPL-2.0 obligations. Check `LICENSING` in the dependency if you plan to redistribute.
+
+**Fork changes.** Cycleable frontlight presets and the local build download page are Copyright (c) 2026 Ekky Pramana and released under the same MIT terms. See `NOTICE` for the fork's disclaimers.
 
 ## Documentation
 
