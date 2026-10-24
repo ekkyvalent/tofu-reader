@@ -23,6 +23,7 @@
 
 #include "CrossPointSettings.h"
 #include "CrossPointState.h"
+#include "SleepWidgets.h"
 #include "activities/reader/ReaderUtils.h"
 #include "components/UITheme.h"
 #include "fontIds.h"
@@ -42,6 +43,7 @@ constexpr auto kSleepClean = HalDisplay::HALF_REFRESH;
 // through it after the panel sits unpowered, so clean with 0xF7 first.
 void cleanBeforeAbsoluteGray(GfxRenderer& renderer) {
 #if FREEINK_DEVICE_METALIO_EINK4
+  // Widget excluded: intermediate clean pass, not the frame the user sees.
   renderer.displayBuffer(HalDisplay::FULL_REFRESH);
 #else
   (void)renderer;
@@ -410,6 +412,8 @@ AlphaOverlayResult tryRenderTransparentOverlayBmp(HalFile& file, GfxRenderer& re
   const bool absolute = renderer.grayscaleCapabilities(sleepGrayscaleMode(renderer)).supported();
   const BwFrameKeeper bwFrame(renderer, !absolute);
   if (!bwFrame.ready()) {
+    // Widget excluded: this helper has no activity handle, and the overlay pass
+    // already owns the combined frame; transparent modes keep their own content.
     renderer.displayBuffer(kSleepClean);
     return AlphaOverlayResult::Rendered;
   }
@@ -655,6 +659,15 @@ void SleepActivity::onEnter() {
   }
 }
 
+void SleepActivity::drawSleepWidget() const {
+  // No widget selected: skip the capture IO so the default sleep path is unchanged.
+  if (SETTINGS.sleepScreenWidget == CrossPointSettings::SLEEP_WIDGET_NONE) return;
+
+  sleep_widgets::Context ctx;
+  sleep_widgets::capture(ctx, renderer.getScreenWidth(), renderer.getScreenHeight());
+  sleep_widgets::draw(renderer, static_cast<CrossPointSettings::SLEEP_WIDGET>(SETTINGS.sleepScreenWidget), ctx);
+}
+
 void SleepActivity::renderCustomSleepScreen() const {
   // Look for sleep.bmp on the root of the sd card to determine if we should
   // render a custom sleep screen instead of the default.
@@ -716,6 +729,8 @@ void SleepActivity::renderDefaultSleepScreen() const {
     renderer.invertScreen();
   }
 
+  // Widget rides this frame: the default screen's only flush is the final one.
+  drawSleepWidget();
   renderer.displayBuffer(kSleepClean);
 }
 
@@ -737,6 +752,8 @@ void SleepActivity::renderBitmapSleepScreen(const Bitmap& bitmap, const bool pre
                                                        CrossPointSettings::SLEEP_SCREEN_COVER_FILTER::NO_FILTER);
 
   if (!renderer.drawBitmap(bitmap, x, y, pageWidth, pageHeight, cropX, cropY, preserveBackground)) {
+    // Widget rides this frame: the bitmap failed to draw, so this flush is all the user sees.
+    drawSleepWidget();
     renderer.displayBuffer(kSleepClean);
     return;
   }
@@ -759,6 +776,8 @@ void SleepActivity::renderBitmapSleepScreen(const Bitmap& bitmap, const bool pre
   const bool absolute = hasGreyscale && renderer.grayscaleCapabilities(sleepGrayscaleMode(renderer)).supported();
   const BwFrameKeeper bwFrame(renderer, hasGreyscale && !absolute);
   if (!bwFrame.ready()) {
+    // Widget rides this frame: grayscale is skipped, so this B/W flush is final.
+    drawSleepWidget();
     renderer.displayBuffer(kSleepClean);
     return;
   }
@@ -772,6 +791,8 @@ void SleepActivity::renderBitmapSleepScreen(const Bitmap& bitmap, const bool pre
     // the differential nudge then lands unevenly (blotchy noise in gray areas).
     renderer.displayGrayscaleBase(HalDisplay::HALF_REFRESH);
   } else {
+    // Widget rides this frame: no grayscale planes, so this B/W flush is final.
+    drawSleepWidget();
     renderer.displayBuffer(kSleepClean);
   }
 
@@ -801,6 +822,10 @@ void SleepActivity::renderBitmapSleepScreen(const Bitmap& bitmap, const bool pre
         renderer.copyGrayscaleMsbBuffers();
     }
     if (ready)
+      // Widget note: on the grayscale path this frame ends in displayGrayBuffer(), where
+      // the B/W buffer the widget paints into is replaced by the plane buffers, so the
+      // widget does not appear. Cover modes therefore only show the widget when the image
+      // renders without grayscale. Revisit if cover-mode widgets are wanted.
       renderer.displayGrayBuffer();
     else
       LOG_ERR("SLP", "Incomplete grayscale image; keeping the current display");
@@ -850,6 +875,8 @@ bool SleepActivity::renderTransparentOverlayPng(const std::string& path) const {
   const bool absolute = renderer.grayscaleCapabilities(sleepGrayscaleMode(renderer)).supported();
   const BwFrameKeeper bwFrame(renderer, !absolute);
   if (!bwFrame.ready()) {
+    // Widget rides this frame: grayscale is skipped, so this B/W flush is final.
+    drawSleepWidget();
     renderer.displayBuffer(kSleepClean);
     return true;
   }
@@ -876,6 +903,10 @@ bool SleepActivity::renderTransparentOverlayPng(const std::string& path) const {
   }
   renderer.copyGrayscaleMsbBuffers();
 
+  // Widget note: on the grayscale path this frame ends in displayGrayBuffer(), where
+  // the B/W buffer the widget paints into is replaced by the plane buffers, so the
+  // widget does not appear. Cover modes therefore only show the widget when the image
+  // renders without grayscale. Revisit if cover-mode widgets are wanted.
   renderer.displayGrayBuffer();
   renderer.setRenderMode(GfxRenderer::BW);
   return true;
@@ -995,11 +1026,13 @@ void SleepActivity::renderLastScreenSleepScreen() const {
   if (gpio.deviceIsX3()) {
     renderer.displayGrayscaleBase(HalDisplay::FAST_REFRESH);
   } else {
+    // Widget excluded: quick resume keeps the live frame; a widget would force a second refresh.
     renderer.displayBuffer(HalDisplay::FAST_REFRESH);
   }
 }
 
 void SleepActivity::renderBlankSleepScreen() const {
   renderer.clearScreen();
+  // Widget excluded: blank mode intentionally shows nothing.
   renderer.displayBuffer(kSleepClean);
 }

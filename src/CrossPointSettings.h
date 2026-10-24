@@ -241,6 +241,14 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
   uint8_t sleepScreenCoverMode = FIT;
   // Sleep screen cover filter
   uint8_t sleepScreenCoverFilter = NO_FILTER;
+  // Optional widget painted onto the sleep screen at sleep entry. 0 = none.
+  // Values are persisted; append new kinds before COUNT, never reorder.
+  enum SLEEP_WIDGET : uint8_t {
+    SLEEP_WIDGET_NONE = 0,
+    SLEEP_WIDGET_CLOCK = 1,
+    SLEEP_WIDGET_COUNT
+  };
+  uint8_t sleepScreenWidget = SLEEP_WIDGET_NONE;
   // Status bar settings
   uint8_t statusBarChapterPageCount = 1;
   uint8_t statusBarBookProgressPercentage = 1;

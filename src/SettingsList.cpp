@@ -22,6 +22,12 @@ void forEachBaseSetting(SettingVisitor visit, void* context) {
     values[CrossPointSettings::COVER_TRANSPARENT] = StrId::STR_COVER_TRANSPARENT;
     return values;
   }();
+  static constexpr auto SLEEP_WIDGET_VALUES = [] {
+    std::array<StrId, CrossPointSettings::SLEEP_WIDGET_COUNT> values{};
+    values[CrossPointSettings::SLEEP_WIDGET_NONE] = StrId::STR_WIDGET_NONE;
+    values[CrossPointSettings::SLEEP_WIDGET_CLOCK] = StrId::STR_WIDGET_CLOCK;
+    return values;
+  }();
   static constexpr auto STATUS_BAR_CLOCK_VALUES = [] {
     std::array<StrId, CrossPointSettings::STATUS_BAR_CLOCK_MODE_COUNT> values{};
     values[CrossPointSettings::STATUS_BAR_CLOCK_HIDE] = StrId::STR_HIDE;
@@ -42,6 +48,8 @@ void forEachBaseSetting(SettingVisitor visit, void* context) {
   emit(SettingInfo::Enum(StrId::STR_QUICK_RESUME_TIMEOUT, &CrossPointSettings::quickResumeSleepScreen,
                          {StrId::STR_STATE_OFF, StrId::STR_STATE_ON}, "quickResumeSleepScreen",
                          StrId::STR_CAT_DISPLAY));
+  emit(SettingInfo::StaticEnum(StrId::STR_SLEEP_SCREEN_WIDGET, &CrossPointSettings::sleepScreenWidget,
+                               SLEEP_WIDGET_VALUES, "sleepScreenWidget", StrId::STR_CAT_DISPLAY));
   emit(SettingInfo::Enum(StrId::STR_HIDE_BATTERY, &CrossPointSettings::hideBatteryPercentage,
                          {StrId::STR_NEVER, StrId::STR_IN_READER, StrId::STR_ALWAYS}, "hideBatteryPercentage",
                          StrId::STR_CAT_DISPLAY));
