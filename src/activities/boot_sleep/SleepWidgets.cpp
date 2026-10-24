@@ -8,6 +8,8 @@
 #include <HalClock.h>
 #include <Logging.h>
 
+#include "fontIds.h"
+
 namespace sleep_widgets {
 
 void capture(Context& ctx, const int pageWidth, const int pageHeight) {
@@ -23,14 +25,16 @@ void capture(Context& ctx, const int pageWidth, const int pageHeight) {
 }
 
 void draw(const GfxRenderer& renderer, const CrossPointSettings::SLEEP_WIDGET kind, const Context& ctx) {
-  (void)renderer;
-  (void)ctx;
   switch (kind) {
-    case CrossPointSettings::SLEEP_WIDGET_CLOCK:
-      // Phase 2: render ctx.timeText
+    case CrossPointSettings::SLEEP_WIDGET_CLOCK: {
+      if (!ctx.timeValid || ctx.timeText[0] == '\0') return;
+      const int y = ctx.pageHeight - 48;
+      if (y < 0) return;
+      renderer.drawCenteredText(UI_10_FONT_ID, y, ctx.timeText, true, EpdFontFamily::BOLD);
       return;
+    }
     case CrossPointSettings::SLEEP_WIDGET_NONE:
-    default:
+    case CrossPointSettings::SLEEP_WIDGET_COUNT:
       return;
   }
 }
