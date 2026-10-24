@@ -10,8 +10,10 @@
 #include <Logging.h>
 
 #include <cstdio>
+#include <cstring>
 #include <ctime>
 
+#include "TodoStore.h"
 #include "fontIds.h"
 
 namespace sleep_widgets {
@@ -89,6 +91,58 @@ void drawCalendar(const GfxRenderer& renderer, const Context& ctx) {
   }
 }
 
+void drawTodo(const GfxRenderer& renderer, const Context& ctx) {
+  if (ctx.todoCount == 0) return;
+
+  const int headingY = MARGIN + 6;
+  renderer.drawCenteredText(UI_10_FONT_ID, headingY, tr(STR_TODO_LIST), true, EpdFontFamily::BOLD);
+
+  const int lineStep = renderer.getLineHeight(SMALL_FONT_ID) + 6;
+  const char* prefix = "[ ] ";
+  const int prefixWidth = renderer.getTextWidth(SMALL_FONT_ID, prefix);
+  const int available = ctx.pageWidth - MARGIN - (MARGIN + prefixWidth);
+  int y = headingY + renderer.getLineHeight(UI_10_FONT_ID);
+
+  for (uint8_t i = 0; i < ctx.todoCount; ++i) {
+    char line[sizeof(ctx.todoText[0])];
+    snprintf(line, sizeof(line), "%s", ctx.todoText[i]);
+
+    size_t len = strlen(line);
+    bool truncated = false;
+    if (renderer.getTextWidth(SMALL_FONT_ID, line) > available) {
+      truncated = true;
+      const int textWidth = available - renderer.getTextWidth(SMALL_FONT_ID, "...");
+      char dropped = '\0';
+      while (len > 0) {
+        dropped = line[len];
+        line[len] = '\0';
+        if (renderer.getTextWidth(SMALL_FONT_ID, line) <= textWidth) break;
+        --len;
+      }
+      // Do not leave a split UTF-8 sequence at the end of the truncated text.
+      if ((static_cast<unsigned char>(dropped) & 0xC0) == 0x80) {
+        while (len > 0 && (static_cast<unsigned char>(line[len - 1]) & 0xC0) == 0x80) --len;
+        if (len > 0) --len;
+        line[len] = '\0';
+      }
+    }
+
+    const int textX = MARGIN + prefixWidth;
+    renderer.drawText(SMALL_FONT_ID, MARGIN, y, prefix, true);
+    renderer.drawText(SMALL_FONT_ID, textX, y, line, true);
+    if (truncated) {
+      renderer.drawText(SMALL_FONT_ID, textX + renderer.getTextWidth(SMALL_FONT_ID, line), y, "...", true);
+    }
+    y += lineStep;
+  }
+
+  if (ctx.todoOverflow > 0) {
+    char more[16];
+    snprintf(more, sizeof(more), "+%u more", static_cast<unsigned>(ctx.todoOverflow));
+    renderer.drawText(SMALL_FONT_ID, MARGIN, y, more, true);
+  }
+}
+
 }  // namespace
 
 void capture(Context& ctx, const int pageWidth, const int pageHeight) {
@@ -111,6 +165,19 @@ void capture(Context& ctx, const int pageWidth, const int pageHeight) {
 
   const BatteryMonitor battery;
   ctx.batteryValid = battery.readPercentageChecked(ctx.batteryPercent);
+
+  TODO_STORE.loadFromFile();
+  ctx.todoCount = 0;
+  ctx.todoOverflow = 0;
+  for (const auto& item : TODO_STORE.getItems()) {
+    if (item.done) continue;
+    if (ctx.todoCount < Context::kMaxWidgetItems) {
+      snprintf(ctx.todoText[ctx.todoCount], sizeof(ctx.todoText[ctx.todoCount]), "%s", item.text.c_str());
+      ++ctx.todoCount;
+    } else {
+      ++ctx.todoOverflow;
+    }
+  }
 }
 
 void draw(const GfxRenderer& renderer, const CrossPointSettings::SLEEP_WIDGET kind, const Context& ctx) {
@@ -119,7 +186,7 @@ void draw(const GfxRenderer& renderer, const CrossPointSettings::SLEEP_WIDGET ki
       drawCalendar(renderer, ctx);
       return;
     case CrossPointSettings::SLEEP_WIDGET_TODO:
-      // Phase 5 stub: the todo widget has no renderer yet.
+      drawTodo(renderer, ctx);
       return;
     case CrossPointSettings::SLEEP_WIDGET_NONE:
     case CrossPointSettings::SLEEP_WIDGET_COUNT:
