@@ -181,19 +181,53 @@ sha256 matches `.pio/build/x4pro/firmware.bin`.
 
 ---
 
-## Phase 3: additional widgets (pick per user)
+## Phase 3: calendar widget (month grid)
 
-Each addition is one function plus one enum value plus one label. Anything that needs more than that
-means the seam in Phase 1 is wrong, so stop and fix the seam instead of special-casing.
+The clock kind added in Phase 2 is **dropped**: the user's picture of this feature is a calendar and
+a todo list, nothing else. Renumber the enum to `NONE = 0`, `CALENDAR = 1`, `TODO = 2`, delete the
+clock draw case, and delete `timeText` from `Context` if the calendar does not need a formatted
+string (the calendar needs the date parts, not "HH:MM"). Nothing persisted survives from the clock
+build, so renumbering is safe.
 
-| Candidate | Data source | Notes |
-| --- | --- | --- |
-| Battery | `BatteryMonitor::readPercentageChecked` | Cheapest. Draw `87%` or a bar. |
-| Book title and progress | existing reader/session state | Needs the current book name plumbed into `Context`; verify no SD read in the draw path. |
-| Reading stats | whatever `drawSleepScreen` already uses for stats | Only if the data is already in memory at sleep entry. |
-| Calendar grid | `Rtc::now` weekday | Pure arithmetic, no IO, but needs more pixels than the bottom band. |
+**Files:** `src/activities/boot_sleep/SleepWidgets.{h,cpp}`, `src/CrossPointSettings.h` (enum and
+labels), `src/SettingsList.cpp` (label array), `lib/I18n/translations/english.yaml`.
 
----
+**Geometry:** full month grid, 7 columns, Monday-first. Header with month name and year, weekday
+header row, then 5-6 week rows. Highlight today with an inverted box. Compute `daysInMonth` and the
+weekday of day 1 in `capture()` with plain arithmetic (no `timegm`, no allocation). Store
+`year`, `month`, `day`, `firstWeekday`, `daysInMonth` in `Context`, all plain integers.
+
+**Rules:** no allocation or formatting in `draw()`; cell coordinates derived from `pageWidth` /
+`pageHeight` so it stays sane on other panels; skip entirely when the date is unavailable; keep the
+`switch` exhaustive.
+
+## Phase 4: todo store and editor (on-device)
+
+Model on the existing OPDS pattern, which already does exactly this shape:
+
+- `src/OpdsServerStore.h` is a `PersistableStore<OpdsServerStore>` singleton holding a
+  `std::vector<OpdsServer>` with `addServer` / `updateServer` / `removeServer`.
+- `src/activities/settings/OpdsServerListActivity.cpp` is a `UiListActivity` with an "Add" row,
+  selection to edit, delete, and text entry through `KeyboardEntryActivity`.
+
+**Deliverables:**
+- `src/TodoStore.{h,cpp}`: singleton `PersistableStore<TodoStore>`, `struct TodoItem { std::string text; bool done; }`,
+  `std::vector<TodoItem> items`, `addItem`, `updateItem`, `setDone`, `removeItem`, plus a cap
+  (recommend 16 items, 64 chars each) so the file and the widget stay bounded.
+- `src/activities/settings/TodoListActivity.{h,cpp}`: list of items (done ones marked visually),
+  add via keyboard, toggle done, delete with confirmation, and edit text. Same interaction model as
+  the OPDS list editor; do not invent a new navigation style.
+- Settings → Display (or a new Todos entry next to it): a row that opens the editor.
+- Widget rendering is Phase 5, not here.
+
+## Phase 5: todo widget
+
+**Files:** `src/activities/boot_sleep/SleepWidgets.{h,cpp}`.
+
+`capture()` copies up to N (recommend 5) not-done items into a fixed `char` array inside `Context`
+(no `std::string`, no heap in the context). `draw()` renders each line with the checkbox glyph and
+truncates with an ellipsis when the text does not fit. Skip the widget when there are no items; never
+draw an empty box. If more items exist than fit, draw a trailing "+N more" line.
 
 ## Out of scope
 
@@ -201,6 +235,7 @@ means the seam in Phase 1 is wrong, so stop and fix the seam instead of special-
 - Widgets on Home or in the reader.
 - Scheduled wake to refresh the widget.
 - Ticking or animated widgets.
+- Calendar events, recurring todos, reminders, notifications.
 - Touching `partitions.csv`, the bootloader, or the OTA path.
 
 ## Risks

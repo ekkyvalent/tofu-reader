@@ -7,11 +7,13 @@ namespace sleep_widgets {
 // Everything a widget may need, captured before the draw so the draw path does
 // no IO and no allocation. Sleep entry runs on a time budget.
 struct Context {
-  // Preformatted local time ("HH:MM" or "H:MM AM"/"HH:MM PM"), filled by capture()
-  // through halClock so timezone and the user's 12/24h setting are already applied.
-  // The draw path only renders this string: no formatting, no IO.
-  bool timeValid = false;
-  char timeText[10] = {0};
+  bool dateValid = false;
+  uint16_t year = 0;        // e.g. 2026
+  uint8_t month = 0;        // 1-12
+  uint8_t day = 0;          // 1-31, today
+  uint8_t todayColumn = 0;  // 0 = Monday .. 6 = Sunday
+  uint8_t firstColumn = 0;  // weekday column of day 1, same mapping
+  uint8_t daysInMonth = 0;
   bool batteryValid = false;
   uint16_t batteryPercent = 0;
   int pageWidth = 0;

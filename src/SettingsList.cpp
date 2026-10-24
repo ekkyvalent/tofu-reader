@@ -25,7 +25,8 @@ void forEachBaseSetting(SettingVisitor visit, void* context) {
   static constexpr auto SLEEP_WIDGET_VALUES = [] {
     std::array<StrId, CrossPointSettings::SLEEP_WIDGET_COUNT> values{};
     values[CrossPointSettings::SLEEP_WIDGET_NONE] = StrId::STR_WIDGET_NONE;
-    values[CrossPointSettings::SLEEP_WIDGET_CLOCK] = StrId::STR_WIDGET_CLOCK;
+    values[CrossPointSettings::SLEEP_WIDGET_CALENDAR] = StrId::STR_WIDGET_CALENDAR;
+    values[CrossPointSettings::SLEEP_WIDGET_TODO] = StrId::STR_WIDGET_TODO;
     return values;
   }();
   static constexpr auto STATUS_BAR_CLOCK_VALUES = [] {

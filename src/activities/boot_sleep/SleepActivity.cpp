@@ -719,6 +719,17 @@ void SleepActivity::renderDefaultSleepScreen() const {
   const auto pageWidth = renderer.getScreenWidth();
   const auto pageHeight = renderer.getScreenHeight();
 
+  if (SETTINGS.sleepScreenWidget != CrossPointSettings::SLEEP_WIDGET_NONE) {
+    // The widget owns the page; the logo and labels would collide with it.
+    renderer.clearScreen();
+    drawSleepWidget();
+    if (SETTINGS.sleepScreen != CrossPointSettings::SLEEP_SCREEN_MODE::LIGHT) {
+      renderer.invertScreen();
+    }
+    renderer.displayBuffer(kSleepClean);
+    return;
+  }
+
   renderer.clearScreen();
   renderer.drawImage(Logo120, (pageWidth - 120) / 2, (pageHeight - 120) / 2, 120, 120);
   renderer.drawCenteredText(UI_10_FONT_ID, pageHeight / 2 + 70, tr(STR_PRODUCT_NAME), true, EpdFontFamily::BOLD);

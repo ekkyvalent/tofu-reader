@@ -245,7 +245,8 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
   // Values are persisted; append new kinds before COUNT, never reorder.
   enum SLEEP_WIDGET : uint8_t {
     SLEEP_WIDGET_NONE = 0,
-    SLEEP_WIDGET_CLOCK = 1,
+    SLEEP_WIDGET_CALENDAR = 1,
+    SLEEP_WIDGET_TODO = 2,
     SLEEP_WIDGET_COUNT
   };
   uint8_t sleepScreenWidget = SLEEP_WIDGET_NONE;
