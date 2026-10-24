@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tofu Reader firmware</title>
+<style>
+:root {
+  --bg: #F7F4ED;
+  --card: #FFFFFF;
+  --text: #1C1B19;
+  --muted: #6B6862;
+  --accent: #3D4E9E;
+  --accent-ink: #FFFFFF;
+  --border: #E2DCCF;
+  --warn-bg: #FFF4D6;
+  --warn-border: #B7791F;
+  --warn-text: #4A3200;
+  --badge-bg: #EDE8DC;
+  --code-bg: #F1EDE3;
+  --shadow: 0 1px 2px rgba(28, 27, 25, 0.08);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #161513;
+    --card: #1F1E1A;
+    --text: #EDE9E0;
+    --muted: #A8A39A;
+    --accent: #9AA8E8;
+    --accent-ink: #161513;
+    --border: #35322B;
+    --warn-bg: #3A2C0C;
+    --warn-border: #C99A2E;
+    --warn-text: #F2DFB0;
+    --badge-bg: #2A2822;
+    --code-bg: #2A2822;
+    --shadow: none;
+  }
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html { background: var(--bg); }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 16px;
+  line-height: 1.55;
+}
+.wrap { max-width: 720px; margin: 0 auto; padding: 24px 16px 48px; }
+header { margin-bottom: 20px; }
+h1 { margin: 10px 0 6px; font-size: 2rem; line-height: 1.15; letter-spacing: -0.01em; }
+h2 { margin: 0 0 12px; font-size: 1.1rem; }
+h3 { margin: 0 0 8px; font-size: 1rem; }
+p { margin: 0 0 12px; }
+.pill {
+  display: inline-block;
+  margin: 0;
+  padding: 2px 10px;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  background: var(--badge-bg);
+  color: var(--accent);
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.sub { color: var(--muted); margin: 0; }
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+  padding: 18px 20px;
+  margin: 0 0 16px;
+}
+.meta { margin: 0; }
+.meta div {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+}
+.meta div:last-child { border-bottom: 0; padding-bottom: 0; }
+.meta dt { color: var(--muted); }
+.meta dd { margin: 0; text-align: right; word-break: break-word; }
+.dirty {
+  display: inline-block;
+  margin: 12px 0 0;
+  padding: 3px 10px;
+  border: 1px solid var(--warn-border);
+  border-radius: 6px;
+  background: var(--warn-bg);
+  color: var(--warn-text);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+.file-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 0;
+  border-top: 1px solid var(--border);
+}
+.file-row:first-child { border-top: 0; padding-top: 0; }
+.file-main { min-width: 0; flex: 1 1 320px; }
+.file-label { font-weight: 600; }
+.file-name { color: var(--muted); font-size: 0.85rem; word-break: break-all; }
+.file-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+code, pre {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.85rem;
+}
+code { background: var(--code-bg); border-radius: 4px; padding: 1px 5px; }
+pre {
+  margin: 0 0 12px;
+  padding: 12px;
+  overflow-x: auto;
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+pre code { background: none; padding: 0; white-space: pre; }
+.copy {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--code-bg);
+  color: var(--text);
+  padding: 3px 9px;
+  font: inherit;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+.copy:hover { border-color: var(--accent); }
+.copy-status { color: var(--muted); font-size: 0.8rem; }
+.file-hint { margin: 10px 0 0; color: var(--muted); font-size: 0.85rem; }
+details.advanced { margin-top: 4px; }
+details.advanced .file-row { padding: 8px 0; }
+details.advanced .download { padding: 4px 10px; font-size: 0.8rem; }
+.download {
+  display: inline-block;
+  padding: 8px 16px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.download:hover { text-decoration: underline; }
+details { border-top: 1px solid var(--border); padding: 10px 0; }
+details:first-of-type { border-top: 0; }
+summary {
+  cursor: pointer;
+  font-weight: 600;
+  padding: 4px 0;
+}
+summary::marker { color: var(--accent); }
+details[open] summary { margin-bottom: 10px; }
+details p, details li { color: var(--text); }
+.warn {
+  background: var(--warn-bg);
+  border: 1px solid var(--warn-border);
+  border-left-width: 6px;
+  border-radius: 8px;
+  color: var(--warn-text);
+  padding: 14px 16px;
+  margin: 0 0 16px;
+}
+.warn strong { display: block; margin-bottom: 4px; }
+table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+th, td { text-align: left; padding: 7px 6px; border-bottom: 1px solid var(--border); }
+th { color: var(--muted); font-weight: 600; }
+td a { color: var(--accent); }
+.error { border-color: var(--warn-border); }
+.error p:last-child { margin-bottom: 0; color: var(--muted); }
+footer {
+  margin-top: 28px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 0.85rem;
+  text-align: center;
+}
+a { color: var(--accent); }
+a:focus-visible, button:focus-visible, summary:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+@media (max-width: 480px) {
+  .wrap { padding: 18px 12px 40px; }
+  .card { padding: 16px; }
+  h1 { font-size: 1.7rem; }
+}
+</style>
+</head>
+<body>
+<main class="wrap">
+  <header>
+    <p class="pill">tailnet only</p>
+    <h1>Tofu Reader</h1>
+    <p class="sub">Firmware builds for the Xteink X4 Pro, a CrossPoint-based reader firmware fork.</p>
+  </header>
+
+  <section class="card" id="build-card" aria-labelledby="build-heading" hidden>
+    <h2 id="build-heading">Build</h2>
+    <dl class="meta">
+      <div><dt>Version</dt><dd id="build-version">unknown</dd></div>
+      <div><dt>Branch</dt><dd id="build-branch">unknown</dd></div>
+      <div><dt>Environment</dt><dd id="build-env">unknown</dd></div>
+      <div><dt>Published</dt><dd id="build-published">unknown</dd></div>
+      <div><dt>Commit</dt><dd id="build-commit">unknown</dd></div>
+    </dl>
+    <p class="dirty" id="dirty-badge" hidden>uncommitted changes</p>
+  </section>
+
+  <section class="card error" id="error-card" aria-labelledby="error-heading" hidden>
+    <h2 id="error-heading">Manifest missing</h2>
+    <p>The build manifest is missing or unreadable, so there is nothing to download yet.</p>
+    <p>Run scripts/publish-local.sh on the build host to publish the current firmware build.</p>
+  </section>
+
+  <section class="card" id="files-card" aria-labelledby="files-heading" hidden>
+    <h2 id="files-heading">Current files</h2>
+    <div id="files"></div>
+  </section>
+
+  <section class="card" id="history-card" hidden>
+    <details>
+      <summary id="history-heading">Older builds</summary>
+      <table>
+        <thead>
+          <tr><th scope="col">Version</th><th scope="col">Size</th><th scope="col">Published</th><th scope="col">Download</th></tr>
+        </thead>
+        <tbody id="history-rows"></tbody>
+      </table>
+    </details>
+  </section>
+
+  <div class="warn" role="note">
+    <strong>Check before the first custom flash</strong>
+    Confirm the unit is not USB-flash locked before flashing custom firmware. A locked unit can end up permanently stuck after a custom flash.
+  </div>
+
+  <section class="card" id="flash-browser" aria-labelledby="browser-heading">
+    <h2 id="browser-heading">Flashing instructions</h2>
+    <details id="sd-card-details">
+      <summary>SD card update (recommended, no cable)</summary>
+      <ol>
+        <li>Download the app image above.</li>
+        <li>Copy it to the SD card. Any folder works, the base name is irrelevant, the extension must stay <code>.bin</code>.</li>
+        <li>Put the card back in the reader.</li>
+        <li>On the device open Settings, System, SD Card Firmware Update and pick the file.</li>
+        <li>The reader validates the image, writes the inactive slot, and reboots into it. This takes a few minutes and the screen shows progress.</li>
+      </ol>
+      <p>The menu entry only exists on CrossPoint-based firmware recent enough to ship it. If "SD Card Firmware Update" is not in the menu, use the browser flasher below.</p>
+      <p class="file-hint">To go back, update again with the upstream CrossPoint image. The old build stays in the other slot.</p>
+    </details>
+
+    <details>
+      <summary>Browser flasher (desktop Chrome, needs USB)</summary>
+      <ol>
+        <li>Open <a href="https://crosspointreader.com/#flash-tools" target="_blank" rel="noopener">crosspointreader.com flash tools</a>.</li>
+        <li>Choose the "Custom .bin / Upload file" option.</li>
+        <li>Select the app image file listed above.</li>
+      </ol>
+      <p>The factory image is a merged bootloader, partition table and app image for writing at address 0x0. It is the wrong file for the browser flasher path.</p>
+    </details>
+
+    <details id="esptool-details">
+      <summary>esptool</summary>
+      <p>App image only, written to the <code>app0</code> slot at 0x10000:</p>
+      <pre><code id="esptool-command">Loading manifest...</code></pre>
+      <p>The offsets must match partitions.csv. The browser flasher applies them automatically.</p>
+      <p>Full image from 0x0, only for a unit whose bootloader or partition table is gone:</p>
+      <pre><code id="esptool-full-command">Loading manifest...</code></pre>
+      <p class="file-hint">Port is /dev/ttyACM0 on Linux, /dev/cu.usbmodem* on macOS, COMx on Windows. The device shows up under those names because the S3 uses native USB.</p>
+    </details>
+  </section>
+
+  <footer>Served from the tailnet. Not indexed, not public.</footer>
+</main>
+
+<script>
+(function () {
+  'use strict';
+
+  function text(id, value) {
+    var node = document.getElementById(id);
+    if (node) {
+      node.textContent = value;
+    }
+  }
+
+  function formatDate(iso) {
+    if (!iso) {
+      return 'unknown';
+    }
+    var date = new Date(iso);
+    if (isNaN(date.getTime())) {
+      return iso;
+    }
+    return date.toLocaleString(undefined, {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  }
+
+  function formatSize(file) {
+    if (file.sizeHuman) {
+      return file.sizeHuman;
+    }
+    if (typeof file.bytes === 'number') {
+      if (file.bytes >= 1024 * 1024) {
+        return (file.bytes / (1024 * 1024)).toFixed(1) + ' MB';
+      }
+      return Math.floor(file.bytes / 1024) + ' KB';
+    }
+    return 'unknown size';
+  }
+
+  async function copyText(value) {
+    if (navigator.clipboard && window.isSecureContext) {
+      try {
+        await navigator.clipboard.writeText(value);
+        return true;
+      } catch (error) {
+        // Fall through to the execCommand path.
+      }
+    }
+    var area = document.createElement('textarea');
+    area.value = value;
+    area.setAttribute('readonly', '');
+    area.style.position = 'fixed';
+    area.style.top = '-1000px';
+    document.body.appendChild(area);
+    area.select();
+    var copied = false;
+    try {
+      copied = document.execCommand('copy');
+    } catch (error) {
+      copied = false;
+    }
+    document.body.removeChild(area);
+    return copied;
+  }
+
+  function downloadLink(path, label) {
+    var link = document.createElement('a');
+    link.className = 'download';
+    link.href = path;
+    link.setAttribute('download', '');
+    link.textContent = 'Download';
+    link.setAttribute('aria-label', 'Download ' + label);
+    return link;
+  }
+
+  function makeFileRow(file) {
+    var row = document.createElement('div');
+    row.className = 'file-row';
+
+    var main = document.createElement('div');
+    main.className = 'file-main';
+
+    var label = document.createElement('div');
+    label.className = 'file-label';
+    label.textContent = file.label || file.role || 'Firmware';
+    main.appendChild(label);
+
+    var name = document.createElement('div');
+    name.className = 'file-name';
+    name.textContent = file.name || '';
+    main.appendChild(name);
+
+    var meta = document.createElement('div');
+    meta.className = 'file-meta';
+
+    var size = document.createElement('span');
+    size.textContent = formatSize(file);
+    meta.appendChild(size);
+
+    if (file.sha256) {
+      var shaLabel = document.createElement('span');
+      shaLabel.textContent = 'sha256';
+      meta.appendChild(shaLabel);
+
+      var shortSha = document.createElement('code');
+      shortSha.textContent = file.sha256.slice(0, 12);
+      shortSha.title = file.sha256;
+      meta.appendChild(shortSha);
+
+      var button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'copy';
+      button.textContent = 'Copy';
+      button.setAttribute('aria-label', 'Copy full sha256 for ' + (file.label || file.name));
+      meta.appendChild(button);
+
+      var status = document.createElement('span');
+      status.className = 'copy-status';
+      status.setAttribute('role', 'status');
+      status.setAttribute('aria-live', 'polite');
+      meta.appendChild(status);
+
+      var timer = 0;
+      button.addEventListener('click', async function () {
+        var copied = await copyText(file.sha256);
+        button.textContent = copied ? 'Copied' : 'Copy failed';
+        status.textContent = copied ? 'SHA-256 copied' : 'Copy failed';
+        window.clearTimeout(timer);
+        timer = window.setTimeout(function () {
+          button.textContent = 'Copy';
+          status.textContent = '';
+        }, 1500);
+      });
+    }
+
+    main.appendChild(meta);
+    row.appendChild(main);
+
+    if (file.path) {
+      row.appendChild(downloadLink(file.path, file.label || file.name || 'firmware'));
+    }
+
+    return row;
+  }
+
+  function render(manifest) {
+    if (!manifest || typeof manifest !== 'object' || !manifest.build || !Array.isArray(manifest.files)) {
+      throw new Error('Invalid manifest');
+    }
+
+    var build = manifest.build;
+    text('build-version', build.version || 'unknown');
+    text('build-branch', build.branch || 'unknown');
+    text('build-env', build.env || 'unknown');
+    text('build-published', formatDate(manifest.generatedAt));
+    text('build-commit', build.commit || (build.commitFull || '').slice(0, 7) || 'unknown');
+
+    var dirtyBadge = document.getElementById('dirty-badge');
+    if (build.dirty) {
+      dirtyBadge.hidden = false;
+    }
+
+    var files = document.getElementById('files');
+    files.replaceChildren();
+
+    var primary = [];
+    var advanced = [];
+    manifest.files.forEach(function (file) {
+      if (!file || !file.path || !file.name) {
+        return;
+      }
+      if (file.role === 'app' || file.role === 'factory') {
+        primary.push(file);
+      } else {
+        advanced.push(file);
+      }
+    });
+
+    primary.forEach(function (file) {
+      files.appendChild(makeFileRow(file));
+    });
+
+    if (advanced.length > 0) {
+      var hint = document.createElement('p');
+      hint.className = 'file-hint';
+      hint.textContent = 'Advanced files below are only needed for a manual esptool flash.';
+      files.appendChild(hint);
+
+      var advancedBox = document.createElement('details');
+      advancedBox.className = 'advanced';
+
+      var summary = document.createElement('summary');
+      summary.textContent = 'Advanced files (esptool only)';
+      advancedBox.appendChild(summary);
+
+      advanced.forEach(function (file) {
+        advancedBox.appendChild(makeFileRow(file));
+      });
+
+      files.appendChild(advancedBox);
+    }
+
+    var history = Array.isArray(manifest.history) ? manifest.history : [];
+    if (history.length > 0) {
+      var rows = document.getElementById('history-rows');
+      rows.replaceChildren();
+      history.forEach(function (entry) {
+        var tr = document.createElement('tr');
+
+        var version = document.createElement('td');
+        version.textContent = entry.version || 'unknown';
+        tr.appendChild(version);
+
+        var size = document.createElement('td');
+        size.textContent = formatSize(entry);
+        tr.appendChild(size);
+
+        var published = document.createElement('td');
+        published.textContent = formatDate(entry.publishedAt);
+        tr.appendChild(published);
+
+        var download = document.createElement('td');
+        if (entry.path) {
+          var link = document.createElement('a');
+          link.href = entry.path;
+          link.setAttribute('download', '');
+          link.textContent = 'Download';
+          link.setAttribute('aria-label', 'Download version ' + (entry.version || 'unknown'));
+          download.appendChild(link);
+        } else {
+          download.textContent = 'unavailable';
+        }
+        tr.appendChild(download);
+
+        rows.appendChild(tr);
+      });
+      document.getElementById('history-card').hidden = false;
+    }
+
+    renderEsptool(manifest.files);
+
+    document.getElementById('build-card').hidden = false;
+    document.getElementById('files-card').hidden = false;
+  }
+
+  function renderEsptool(files) {
+    var byRole = {};
+    files.forEach(function (file) {
+      if (file && file.role) {
+        byRole[file.role] = file;
+      }
+    });
+
+    var bootloader = byRole.bootloader;
+    var partitions = byRole.partitions;
+    var app = byRole.app;
+    var command = document.getElementById('esptool-command');
+    var fullCommand = document.getElementById('esptool-full-command');
+    var origin = window.location.origin + '/';
+
+    if (app && app.path) {
+      command.textContent =
+        'esptool.py --chip esp32s3 -p /dev/ttyACM0 -b 460800 \\\n' +
+        '  write_flash 0x10000 ' + origin + app.path;
+    } else {
+      command.textContent = 'This build is missing the app image. Use the browser flasher.';
+    }
+
+    if (bootloader && bootloader.path && partitions && partitions.path && app && app.path) {
+      fullCommand.textContent =
+        'esptool.py --chip esp32s3 -p /dev/ttyACM0 -b 460800 \\\n' +
+        '  write_flash 0x0 ' + origin + bootloader.path +
+        ' 0x8000 ' + origin + partitions.path +
+        ' 0x10000 ' + origin + app.path;
+    } else {
+      fullCommand.textContent = 'This build is missing the bootloader or partition table image. Use the browser flasher.';
+    }
+  }
+
+  function showError() {
+    document.getElementById('build-card').hidden = true;
+    document.getElementById('files-card').hidden = true;
+    document.getElementById('history-card').hidden = true;
+    document.getElementById('esptool-details').hidden = true;
+    document.getElementById('error-card').hidden = false;
+  }
+
+  async function init() {
+    try {
+      var response = await fetch('manifest.json', { cache: 'no-store' });
+      if (!response.ok) {
+        throw new Error('HTTP ' + response.status);
+      }
+      var manifest = await response.json();
+      render(manifest);
+    } catch (error) {
+      showError();
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', init);
+})();
+</script>
+</body>
+</html>
