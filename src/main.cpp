@@ -267,7 +267,7 @@ bool handleX4ProFrontlightDoubleClick() {
   }
 
   lastX4ProPowerClickAt = 0;
-  frontlight_presets::cycle();
+  toggleFrontlight();
   return true;
 }
 
