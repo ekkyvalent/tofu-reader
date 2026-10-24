@@ -119,6 +119,10 @@ void CrossPointSettings::toJson(JsonDocument& doc) const {
     doc["keyboardLayouts"] = keyboardLayouts;
   }
 
+  // Fork marker: records that the fork's one-time migrations have run. Read by
+  // fromJson(); bump the number if a later migration needs a second pass.
+  doc["forkSettingsVersion"] = 1;
+
   bleturner::writeJson(ble, doc);
 }
 
@@ -289,6 +293,20 @@ bool CrossPointSettings::fromJson(JsonVariantConst doc) {
   // Absent means unconfigured, which is the default.
   if (doc["keyboardLayouts"].is<uint16_t>()) {
     keyboardLayouts = doc["keyboardLayouts"].as<uint16_t>();
+  }
+
+  // Fork migration: this fork makes "Cycle Frontlight Preset" the default action for
+  // the home double-tap. A device that ran upstream has ToggleFrontlight written out
+  // in settings.json, and a saved value beats the struct default, so without this the
+  // new default would never take effect on an upgraded device. Remap that legacy value
+  // once and resave. A deliberate choice made after the migration survives, because the
+  // marker is present and this block never runs again.
+  if (!doc["forkSettingsVersion"].is<uint8_t>() && doc["homeButtonDoubleTapAction"].is<uint8_t>()) {
+    if (homeButtonDoubleTapAction == static_cast<uint8_t>(HomeButtonAction::ToggleFrontlight)) {
+      LOG_INF("CPS", "Migrating home double-tap: ToggleFrontlight -> CycleFrontlightPreset");
+      homeButtonDoubleTapAction = static_cast<uint8_t>(HomeButtonAction::CycleFrontlightPreset);
+    }
+    needsResave = true;
   }
 
   if (!bleturner::readJson(ble, doc)) {
