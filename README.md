@@ -1,5 +1,13 @@
 # CrossPoint Reader
 
+> **Tofu Reader** is a personal fork of [CrossPoint Reader](https://github.com/crosspoint-reader/crosspoint-reader), maintained for an Xteink X4 Pro. Everything below is upstream's documentation, so read it as CrossPoint docs with a fork attached.
+>
+> This fork is not affiliated with Xteink and not supported by upstream. Bug reports about the base firmware belong upstream, not here.
+>
+> To install on an X4 Pro: build the `x4pro` environment, copy `firmware.bin` to the SD card, then run Settings > System > SD Card Firmware Update. Reverting is the same flow with the upstream image, because the update writes the inactive A/B slot.
+>
+> This fork is based on upstream tag `2.0.0rc` (commit `91ed3ef`) plus three local commits. Upstream `develop` had moved 21 commits past that tag as of 2026-10-24, but its tip (`83df537`) does not compile: `lib/EpdFont/SdCardFont.cpp` references `styles_[si].present`, though the `SdCardFont::PerStyle` member `present` was removed by upstream commit `b912e00` and the tip was merged without fixing the reference. That breakage is upstream's, not this fork's, and this fork does not patch it, so the fork tracks the tag and moving to `develop` waits for upstream to fix the tip.
+
 [![Fund contributors](https://img.shields.io/badge/%F0%9F%91%91_Fund_contributors-royalty.dev-BB953A?style=for-the-badge&labelColor=1a1a1a)](https://app.royalty.dev/crosspoint-reader/crosspoint-reader)
 
 CrossPoint is open-source e-reader firmware - community-built, fully hackable, free forever. It's maintained by a growing community of developers and readers who believe your device should do what you want - not what a manufacturer decided for you.
