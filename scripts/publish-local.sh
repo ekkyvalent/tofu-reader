@@ -102,9 +102,11 @@ if [[ -n "$dirty_source" ]]; then
 elif [[ "$source_commit_ts" =~ ^[0-9]+$ && "$bin_mtime" =~ ^[0-9]+$ ]] && ((source_commit_ts > bin_mtime)); then
   stale_reason="a commit touching src or lib"
 fi
-if [[ -n "$stale_reason" ]]; then
+if [[ -n "$dirty_source" ]]; then
   echo "warning: $APP_SRC predates $stale_reason" >&2
   echo "warning: the published binary may not match the current source; rebuild before publishing." >&2
+elif [[ -n "$stale_reason" ]]; then
+  echo "note: firmware.bin is older than the last commit touching src or lib. Expected when you built before committing; rebuild first if that commit changed code you did not build." >&2
 fi
 
 if ! VERSION="$(git -C "$REPO_ROOT" describe --tags --always --dirty 2>/dev/null)"; then
