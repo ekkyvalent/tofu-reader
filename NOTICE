@@ -5,7 +5,7 @@ one Xteink X4 Pro unit. It is not affiliated with, endorsed by, or supported by 
 CrossPoint Reader organization, its contributors, or Xteink.
 
   Upstream project:   https://github.com/crosspoint-reader/crosspoint-reader
-  Base of this fork:  upstream tag 2.0.0rc (commit 91ed3ef)
+  Base of this fork:  upstream develop (last rebase at facaa87e)
 
 Licensing. The upstream firmware and the FreeInk SDK are MIT licensed. The original
 MIT copyright notice in LICENSE is preserved unchanged and covers all upstream code

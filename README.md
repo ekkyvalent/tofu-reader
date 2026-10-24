@@ -6,7 +6,7 @@
 >
 > To install on an X4 Pro: build the `x4pro` environment, copy `firmware.bin` to the SD card, then run Settings > System > SD Card Firmware Update. Reverting is the same flow with the upstream image, because the update writes the inactive A/B slot.
 >
-> This fork is based on upstream tag `2.0.0rc` (commit `91ed3ef`) plus three local commits. Upstream `develop` had moved 21 commits past that tag as of 2026-10-24, but its tip (`83df537`) does not compile: `lib/EpdFont/SdCardFont.cpp` references `styles_[si].present`, though the `SdCardFont::PerStyle` member `present` was removed by upstream commit `b912e00` and the tip was merged without fixing the reference. That breakage is upstream's, not this fork's, and this fork does not patch it, so the fork tracks the tag and moving to `develop` waits for upstream to fix the tip.
+> This fork tracks upstream `develop`, rebased rather than merged, so this branch's history is rewritten and force-pushes here are expected. Last rebase: upstream `facaa87e`. An earlier revision of this fork sat on the `2.0.0rc` tag because upstream's tip briefly did not compile: `lib/EpdFont/SdCardFont.cpp` referenced `PerStyle::present` after #4114 removed the member. Upstream fixed that in #4134 (`98da1782`), so the fork is back on `develop`.
 >
 > This repository is public because the base firmware is MIT licensed and someone else may find the changes useful. There is no support, no release cadence and no warranty: it is maintained for one device. If you run it, you own the outcome.
 >
@@ -170,7 +170,7 @@ Conversion runs the firmware repo's `lib/EpdFont/scripts/fontconvert_sdcard.py` 
 
 This firmware exists because of other people's work. Everything here is MIT unless noted otherwise.
 
-**Upstream.** Tofu Reader is a fork of [CrossPoint Reader](https://github.com/crosspoint-reader/crosspoint-reader), Copyright (c) 2025 CrossPoint Reader organization, MIT licensed. The reading engine, UI, device support and documentation are upstream's work. This fork is based on upstream tag `2.0.0rc` (commit `91ed3ef`).
+**Upstream.** Tofu Reader is a fork of [CrossPoint Reader](https://github.com/crosspoint-reader/crosspoint-reader), Copyright (c) 2025 CrossPoint Reader organization, MIT licensed. The reading engine, UI, device support and documentation are upstream's work. This fork tracks upstream `develop`; the last rebase was at commit `facaa87e`.
 
 **FreeInk SDK.** The hardware abstraction layer, display drivers, SD card, network and font stacks come from [freeink-sdk](https://github.com/Free-Ink/freeink-sdk), Copyright (c) 2026 FreeInk, MIT licensed. It vendors expat (MIT) and, through FreeInkFont, FreeType (FreeType License) and stb_truetype (public domain / MIT).
 
