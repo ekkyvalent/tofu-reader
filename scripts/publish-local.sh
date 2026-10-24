@@ -93,9 +93,17 @@ for optional in "$FACTORY_SRC" "$BOOTLOADER_SRC" "$PARTITIONS_SRC"; do
   fi
 done
 
-newer_source="$(find "$REPO_ROOT/src" "$REPO_ROOT/lib" -type f -newer "$APP_SRC" -print -quit 2>/dev/null || true)"
-if [[ -n "$newer_source" ]]; then
-  echo "warning: $APP_SRC predates $newer_source" >&2
+dirty_source="$(git -C "$REPO_ROOT" status --porcelain --untracked-files=normal -- src lib 2>/dev/null || true)"
+source_commit_ts="$(git -C "$REPO_ROOT" log -1 --format=%ct -- src lib 2>/dev/null || true)"
+bin_mtime="$(stat -c %Y -- "$APP_SRC" 2>/dev/null || true)"
+stale_reason=""
+if [[ -n "$dirty_source" ]]; then
+  stale_reason="uncommitted changes in src or lib"
+elif [[ "$source_commit_ts" =~ ^[0-9]+$ && "$bin_mtime" =~ ^[0-9]+$ ]] && ((source_commit_ts > bin_mtime)); then
+  stale_reason="a commit touching src or lib"
+fi
+if [[ -n "$stale_reason" ]]; then
+  echo "warning: $APP_SRC predates $stale_reason" >&2
   echo "warning: the published binary may not match the current source; rebuild before publishing." >&2
 fi
 
