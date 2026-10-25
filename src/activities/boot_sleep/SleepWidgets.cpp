@@ -1,6 +1,6 @@
 // Sleep widgets split into two phases. capture() runs once at sleep entry and
 // may touch the HAL and IO (clock, battery). draw() runs inside a display flush
-// and may not allocate, format text or read files; it only paints.
+// and may not allocate or read files; it only paints with stack buffers.
 #include "SleepWidgets.h"
 
 #include <BatteryMonitor.h>
@@ -19,8 +19,19 @@
 namespace sleep_widgets {
 namespace {
 
-constexpr int MARGIN = 24;
-constexpr int MIN_CELL = 8;
+constexpr int kWidgetMargin = 40;
+constexpr int MIN_CELL = 12;
+
+// Todo row geometry. capture() runs before the renderer exists, so the
+// panel-fit cap below uses the pinned font metrics instead of measuring them:
+// NOTOSANS_16 advanceY is 45 px, NOTOSANS_14 advanceY is 40 px.
+constexpr int kTodoRowGap = 18;
+constexpr int kPinnedNoto16Line = 45;
+constexpr int kPinnedNoto14Line = 40;
+constexpr int kTodoRowPitch = kPinnedNoto16Line + kTodoRowGap;
+constexpr int kTodoHeadingHeight = kPinnedNoto16Line;
+constexpr int kTodoHeadingGap = 12;
+constexpr int kTodoOverflowHeight = kPinnedNoto14Line;
 
 constexpr StrId MONTH_LABELS[12] = {
     StrId::STR_WIDGET_MONTH_JAN, StrId::STR_WIDGET_MONTH_FEB, StrId::STR_WIDGET_MONTH_MAR,
@@ -43,104 +54,180 @@ uint8_t daysInMonth(const uint16_t year, const uint8_t month) {
   return leap ? 29 : 28;
 }
 
+// Top y that centres a content block of contentHeight on the page, never
+// rising above the margin.
+int centeredTop(const int pageHeight, const int contentHeight) {
+  const int top = (pageHeight - contentHeight) / 2;
+  return top < kWidgetMargin ? kWidgetMargin : top;
+}
+
+// Start of the last UTF-8 codepoint in [0, length), so truncation can drop a
+// whole character instead of a continuation byte.
+size_t lastCodepointStart(const char* text, const size_t length) {
+  size_t i = length;
+  while (i > 0) {
+    --i;
+    if ((static_cast<unsigned char>(text[i]) & 0xC0) != 0x80) return i;
+  }
+  return 0;
+}
+
+// Copies text into out with a trailing "..." when it is wider than maxWidth.
+// Walks back whole UTF-8 codepoints and allocates nothing.
+void fitTextToWidth(const GfxRenderer& renderer, const int fontId, const char* text, const int maxWidth, char* out,
+                    const size_t outSize) {
+  if (outSize == 0) return;
+
+  const int ellipsisWidth = renderer.getTextWidth(fontId, "...");
+  if (ellipsisWidth > maxWidth) {
+    out[0] = '\0';
+    return;
+  }
+
+  if (outSize < 4) {
+    out[0] = '\0';
+    return;
+  }
+  size_t length = strlen(text);
+  if (length >= outSize) length = outSize - 1;
+  memcpy(out, text, length);
+  out[length] = '\0';
+  if (renderer.getTextWidth(fontId, out) <= maxWidth) return;
+
+  // Too wide: reserve room for the trailing ellipsis and its terminator.
+  if (length > outSize - 4) {
+    length = outSize - 4;
+    out[length] = '\0';
+  }
+  const int budget = maxWidth - ellipsisWidth;
+  while (length > 0) {
+    length = lastCodepointStart(out, length);
+    out[length] = '\0';
+    if (renderer.getTextWidth(fontId, out) <= budget) break;
+  }
+
+  size_t body = length;
+  memcpy(out + body, "...", 3);
+  out[body + 3] = '\0';
+  // Kerning across the join can add a pixel; drop whole codepoints from the
+  // body until the composed string fits.
+  while (body > 0 && renderer.getTextWidth(fontId, out) > maxWidth) {
+    const size_t next = lastCodepointStart(out, body);
+    memmove(out + next, out + body, 3);
+    out[next + 3] = '\0';
+    body = next;
+  }
+}
+
 void drawCalendar(const GfxRenderer& renderer, const Context& ctx) {
   if (!ctx.dateValid || ctx.month < 1 || ctx.month > 12) return;
 
-  const int cellW = (ctx.pageWidth - 2 * MARGIN) / 7;
+  const int cellW = (ctx.pageWidth - 2 * kWidgetMargin) / 7;
   if (cellW < MIN_CELL) return;
 
   const int weeks = (ctx.firstColumn + ctx.daysInMonth + 6) / 7;
   if (weeks <= 0) return;
 
-  const int headerY = MARGIN + 6;
-  const int weekdayY = headerY + renderer.getLineHeight(UI_10_FONT_ID);
-  const int gridTop = weekdayY + renderer.getLineHeight(SMALL_FONT_ID);
-  const int cellH = (ctx.pageHeight - MARGIN - gridTop) / weeks;
+  const int titleLine = renderer.getLineHeight(NOTOSANS_18_FONT_ID);
+  const int weekdayLine = renderer.getLineHeight(NOTOSANS_12_FONT_ID);
+  const int dayLine = renderer.getLineHeight(NOTOSANS_14_FONT_ID);
+  // Line height plus a small gap keeps the grid compact instead of stretching
+  // the cells over the remaining panel height.
+  const int cellH = dayLine + 12;
   if (cellH < MIN_CELL) return;
-  // Cells should stay near-square. Letting them eat every remaining pixel turns a
-  // five-week month into a tall empty table that reads worse than a smaller grid.
-  const int cellHPx = cellH > cellW + 8 ? cellW + 8 : cellH;
 
-  char header[16];
-  snprintf(header, sizeof(header), "%s %u", I18n::getInstance().get(MONTH_LABELS[ctx.month - 1]),
+  const int weekdayOffset = titleLine;
+  const int gridOffset = weekdayOffset + weekdayLine;
+  const int contentH = gridOffset + weeks * cellH;
+  const int top = centeredTop(ctx.pageHeight, contentH);
+
+  char title[16];
+  snprintf(title, sizeof(title), "%s %u", I18n::getInstance().get(MONTH_LABELS[ctx.month - 1]),
            static_cast<unsigned>(ctx.year));
-  renderer.drawCenteredText(UI_10_FONT_ID, headerY, header, true, EpdFontFamily::BOLD);
+  renderer.drawCenteredText(NOTOSANS_18_FONT_ID, top, title, true, EpdFontFamily::BOLD);
 
-  const int lineHeight = renderer.getLineHeight(SMALL_FONT_ID);
+  const int weekdayY = top + weekdayOffset;
   for (uint8_t col = 0; col < 7; ++col) {
     const char* label = I18n::getInstance().get(WEEKDAY_LABELS[col]);
-    const int x = MARGIN + col * cellW + (cellW - renderer.getTextWidth(SMALL_FONT_ID, label)) / 2;
-    renderer.drawText(SMALL_FONT_ID, x, weekdayY, label, true);
+    const int x = kWidgetMargin + col * cellW + (cellW - renderer.getTextWidth(NOTOSANS_12_FONT_ID, label)) / 2;
+    renderer.drawText(NOTOSANS_12_FONT_ID, x, weekdayY, label, true);
   }
 
+  const int gridTop = top + gridOffset;
   char dayText[4];
   for (uint8_t day = 1; day <= ctx.daysInMonth; ++day) {
     const int slot = ctx.firstColumn + day - 1;
     const int col = slot % 7;
     const int row = slot / 7;
-    const int cellX = MARGIN + col * cellW;
-    const int cellY = gridTop + row * cellHPx;
+    const int cellX = kWidgetMargin + col * cellW;
+    const int cellY = gridTop + row * cellH;
     const bool today = day == ctx.day;
 
-    if (today) renderer.fillRect(cellX + 2, cellY + 2, cellW - 4, cellHPx - 4, true);
+    if (today) renderer.fillRect(cellX + 2, cellY + 2, cellW - 4, cellH - 4, true);
 
     snprintf(dayText, sizeof(dayText), "%u", static_cast<unsigned>(day));
-    const int textX = cellX + (cellW - renderer.getTextWidth(SMALL_FONT_ID, dayText)) / 2;
-    const int textY = cellY + (cellHPx - lineHeight) / 2;
-    renderer.drawText(SMALL_FONT_ID, textX, textY, dayText, !today);
+    const int textX = cellX + (cellW - renderer.getTextWidth(NOTOSANS_14_FONT_ID, dayText)) / 2;
+    const int textY = cellY + (cellH - dayLine) / 2;
+    renderer.drawText(NOTOSANS_14_FONT_ID, textX, textY, dayText, !today);
   }
 }
 
 void drawTodo(const GfxRenderer& renderer, const Context& ctx) {
   if (ctx.todoCount == 0) return;
 
-  const int headingY = MARGIN + 6;
-  renderer.drawCenteredText(UI_10_FONT_ID, headingY, tr(STR_TODO_LIST), true, EpdFontFamily::BOLD);
+  const int lineHeight = renderer.getLineHeight(NOTOSANS_16_FONT_ID);
+  const int rowPitch = lineHeight + kTodoRowGap;
+  const int overflowLine = ctx.todoOverflow > 0 ? renderer.getLineHeight(NOTOSANS_14_FONT_ID) : 0;
+  const int contentH = lineHeight + kTodoHeadingGap + ctx.todoCount * rowPitch + overflowLine;
+  const int top = centeredTop(ctx.pageHeight, contentH);
 
-  const int lineStep = renderer.getLineHeight(SMALL_FONT_ID) + 6;
-  const char* prefix = "[ ] ";
-  const int prefixWidth = renderer.getTextWidth(SMALL_FONT_ID, prefix);
-  const int available = ctx.pageWidth - MARGIN - (MARGIN + prefixWidth);
-  int y = headingY + renderer.getLineHeight(UI_10_FONT_ID);
+  renderer.drawCenteredText(NOTOSANS_16_FONT_ID, top, tr(STR_TODO_LIST), true, EpdFontFamily::BOLD);
 
+  constexpr int kBoxSize = 18;
+  constexpr int kBoxGap = 14;
+  const int textX = kWidgetMargin + kBoxSize + kBoxGap;
+  const int maxTextWidth = ctx.pageWidth - kWidgetMargin - textX;
+
+  int rowY = top + lineHeight + kTodoHeadingGap;
   for (uint8_t i = 0; i < ctx.todoCount; ++i) {
+    const int boxY = rowY + (lineHeight - kBoxSize) / 2;
+    renderer.drawRect(kWidgetMargin, boxY, kBoxSize, kBoxSize, 2, true);
+    if (ctx.todoDone[i]) {
+      // An X reads as finished at this size; a strike-through would not.
+      constexpr int kInset = 4;
+      const int x0 = kWidgetMargin + kInset;
+      const int x1 = kWidgetMargin + kBoxSize - kInset - 1;
+      const int y0 = boxY + kInset;
+      const int y1 = boxY + kBoxSize - kInset - 1;
+      renderer.drawLine(x0, y0, x1, y1, true);
+      renderer.drawLine(x1, y0, x0, y1, true);
+    }
+
     char line[sizeof(ctx.todoText[0])];
-    snprintf(line, sizeof(line), "%s", ctx.todoText[i]);
-
-    size_t len = strlen(line);
-    bool truncated = false;
-    if (renderer.getTextWidth(SMALL_FONT_ID, line) > available) {
-      truncated = true;
-      const int textWidth = available - renderer.getTextWidth(SMALL_FONT_ID, "...");
-      char dropped = '\0';
-      while (len > 0) {
-        dropped = line[len];
-        line[len] = '\0';
-        if (renderer.getTextWidth(SMALL_FONT_ID, line) <= textWidth) break;
-        --len;
-      }
-      // Do not leave a split UTF-8 sequence at the end of the truncated text.
-      if ((static_cast<unsigned char>(dropped) & 0xC0) == 0x80) {
-        while (len > 0 && (static_cast<unsigned char>(line[len - 1]) & 0xC0) == 0x80) --len;
-        if (len > 0) --len;
-        line[len] = '\0';
-      }
-    }
-
-    const int textX = MARGIN + prefixWidth;
-    renderer.drawText(SMALL_FONT_ID, MARGIN, y, prefix, true);
-    renderer.drawText(SMALL_FONT_ID, textX, y, line, true);
-    if (truncated) {
-      renderer.drawText(SMALL_FONT_ID, textX + renderer.getTextWidth(SMALL_FONT_ID, line), y, "...", true);
-    }
-    y += lineStep;
+    fitTextToWidth(renderer, NOTOSANS_16_FONT_ID, ctx.todoText[i], maxTextWidth, line, sizeof(line));
+    renderer.drawText(NOTOSANS_16_FONT_ID, textX, rowY, line, true);
+    rowY += rowPitch;
   }
 
   if (ctx.todoOverflow > 0) {
     char more[16];
     snprintf(more, sizeof(more), "+%u more", static_cast<unsigned>(ctx.todoOverflow));
-    renderer.drawText(SMALL_FONT_ID, MARGIN, y, more, true);
+    renderer.drawText(NOTOSANS_14_FONT_ID, kWidgetMargin, rowY, more, true);
   }
+}
+
+// Rows that fit between the margins. The heading, its gap and one overflow
+// line are fixed costs:
+//   cap = (pageHeight - 2*40 - 45 - 12 - 40) / 63
+// On 480x800 that is (800 - 80 - 97) / 63 = 9, so kMaxWidgetItems (8) wins.
+// On a 480-tall panel it is (480 - 80 - 97) / 63 = 4.
+uint8_t todoRowCap(const int pageHeight) {
+  const int usable = pageHeight - 2 * kWidgetMargin;
+  const int fixed = kTodoHeadingHeight + kTodoHeadingGap + kTodoOverflowHeight;
+  const int fitRows = (usable - fixed) / kTodoRowPitch;
+  if (fitRows <= 0) return 0;
+  if (fitRows >= Context::kMaxWidgetItems) return Context::kMaxWidgetItems;
+  return static_cast<uint8_t>(fitRows);
 }
 
 }  // namespace
@@ -169,10 +256,13 @@ void capture(Context& ctx, const int pageWidth, const int pageHeight) {
   TODO_STORE.loadFromFile();
   ctx.todoCount = 0;
   ctx.todoOverflow = 0;
+  const uint8_t cap = todoRowCap(pageHeight);
+  // Keep done items: a finished task stays on the sleep screen as a record of
+  // the day until the user deletes it in Settings. Stored order is preserved.
   for (const auto& item : TODO_STORE.getItems()) {
-    if (item.done) continue;
-    if (ctx.todoCount < Context::kMaxWidgetItems) {
+    if (ctx.todoCount < cap) {
       snprintf(ctx.todoText[ctx.todoCount], sizeof(ctx.todoText[ctx.todoCount]), "%s", item.text.c_str());
+      ctx.todoDone[ctx.todoCount] = item.done;
       ++ctx.todoCount;
     } else {
       ++ctx.todoOverflow;

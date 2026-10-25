@@ -19,11 +19,14 @@ struct Context {
   int pageWidth = 0;
   int pageHeight = 0;
 
-  // Todo widget snapshot: only undone items, copied out of TodoStore so the draw
-  // path never touches std::string or the SD card. sized +1 for the terminator.
-  static constexpr uint8_t kMaxWidgetItems = 5;
+  // Todo widget snapshot: every stored item, done or not, copied out of
+  // TodoStore so the draw path never touches std::string or the SD card. A
+  // finished item stays on the sleep screen as a record of the day until the
+  // user deletes it in Settings. Sized +1 for the terminator.
+  static constexpr uint8_t kMaxWidgetItems = 8;
   uint8_t todoCount = 0;
-  uint8_t todoOverflow = 0;  // undone items beyond kMaxWidgetItems that did not fit
+  uint8_t todoOverflow = 0;  // items beyond the panel-fit cap that did not fit
+  bool todoDone[kMaxWidgetItems] = {};
   char todoText[kMaxWidgetItems][41] = {};
 };
 
