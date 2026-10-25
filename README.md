@@ -112,8 +112,10 @@ first boot of the preset feature: a saved `ToggleFrontlight` Home button action 
 
 ## Updates and versioning
 
-`VERSION` at the repo root is the source of truth. A tagged build reports `1.0.0`; anything built from
-an untagged commit reports `1.0.0-dev+<short sha>`. The version is shown in **Settings > About**.
+`VERSION` at the repo root is the source of truth, and the target is appended to it, so the firmware
+reports `1.0.0-x4pro` in **Settings > About** and in its HTTP user agent. The local download page
+carries the commit as well: `1.0.0-dev+<short sha>` for a build that is not the release tag, and bare
+`1.0.0` at the tag.
 
 **Settings > Check for updates** reads releases from this repository, not from upstream, so a device
 running Tofu Reader is never pulled onto a CrossPoint build.
