@@ -109,13 +109,9 @@ elif [[ -n "$stale_reason" ]]; then
   echo "note: firmware.bin is older than the last commit touching src or lib. Expected when you built before committing; rebuild first if that commit changed code you did not build." >&2
 fi
 
-if ! VERSION="$(git -C "$REPO_ROOT" describe --tags --always --dirty 2>/dev/null)"; then
-  VERSION="$(git -C "$REPO_ROOT" rev-parse --short HEAD)"
-  if ! git -C "$REPO_ROOT" diff --quiet HEAD -- 2>/dev/null; then
-    VERSION="${VERSION}-dirty"
-  fi
-fi
-VERSION="$(printf '%s' "$VERSION" | sed 's/[^A-Za-z0-9._-]/_/g')"
+# Single source of truth: scripts/version.py derives the string from VERSION.
+VERSION="$(python3 "$REPO_ROOT/scripts/version.py")"
+VERSION="$(printf '%s' "$VERSION" | sed 's/[^A-Za-z0-9._+-]/_/g')"
 
 BRANCH="$(git -C "$REPO_ROOT" rev-parse --abbrev-ref HEAD)"
 COMMIT="$(git -C "$REPO_ROOT" rev-parse --short HEAD)"
