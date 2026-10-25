@@ -20,6 +20,7 @@ void forEachBaseSetting(SettingVisitor visit, void* context) {
     values[CrossPointSettings::QUICK_RESUME] = StrId::STR_QUICK_RESUME;
     values[CrossPointSettings::TRANSPARENT_CUSTOM] = StrId::STR_TRANSPARENT;
     values[CrossPointSettings::COVER_TRANSPARENT] = StrId::STR_COVER_TRANSPARENT;
+    values[CrossPointSettings::WIDGET] = StrId::STR_WIDGET;
     return values;
   }();
   static constexpr auto SLEEP_WIDGET_VALUES = [] {

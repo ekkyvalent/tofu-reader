@@ -654,6 +654,8 @@ void SleepActivity::onEnter() {
       } else {
         return renderCustomSleepScreen();
       }
+    case (CrossPointSettings::SLEEP_SCREEN_MODE::WIDGET):
+      return renderSleepWidgetScreen();
     default:
       return renderDefaultSleepScreen();
   }
@@ -666,6 +668,20 @@ void SleepActivity::drawSleepWidget() const {
   sleep_widgets::Context ctx;
   sleep_widgets::capture(ctx, renderer.getScreenWidth(), renderer.getScreenHeight());
   sleep_widgets::draw(renderer, static_cast<CrossPointSettings::SLEEP_WIDGET>(SETTINGS.sleepScreenWidget), ctx);
+}
+
+void SleepActivity::renderSleepWidgetScreen() const {
+  renderer.clearScreen();
+  if (SETTINGS.sleepScreenWidget == CrossPointSettings::SLEEP_WIDGET_NONE) {
+    // Entering Widget mode with nothing picked must not produce an empty page.
+    sleep_widgets::Context ctx;
+    sleep_widgets::capture(ctx, renderer.getScreenWidth(), renderer.getScreenHeight());
+    sleep_widgets::draw(renderer, CrossPointSettings::SLEEP_WIDGET_CALENDAR, ctx);
+  } else {
+    drawSleepWidget();
+  }
+  // A widget is black on white, so this screen skips the invert step.
+  renderer.displayBuffer(kSleepClean);
 }
 
 void SleepActivity::renderCustomSleepScreen() const {
@@ -719,17 +735,6 @@ void SleepActivity::renderDefaultSleepScreen() const {
   const auto pageWidth = renderer.getScreenWidth();
   const auto pageHeight = renderer.getScreenHeight();
 
-  if (SETTINGS.sleepScreenWidget != CrossPointSettings::SLEEP_WIDGET_NONE) {
-    // The widget owns the page; the logo and labels would collide with it.
-    renderer.clearScreen();
-    drawSleepWidget();
-    if (SETTINGS.sleepScreen != CrossPointSettings::SLEEP_SCREEN_MODE::LIGHT) {
-      renderer.invertScreen();
-    }
-    renderer.displayBuffer(kSleepClean);
-    return;
-  }
-
   renderer.clearScreen();
   renderer.drawImage(Logo120, (pageWidth - 120) / 2, (pageHeight - 120) / 2, 120, 120);
   renderer.drawCenteredText(UI_10_FONT_ID, pageHeight / 2 + 70, tr(STR_PRODUCT_NAME), true, EpdFontFamily::BOLD);
@@ -740,8 +745,6 @@ void SleepActivity::renderDefaultSleepScreen() const {
     renderer.invertScreen();
   }
 
-  // Widget rides this frame: the default screen's only flush is the final one.
-  drawSleepWidget();
   renderer.displayBuffer(kSleepClean);
 }
 
@@ -763,8 +766,6 @@ void SleepActivity::renderBitmapSleepScreen(const Bitmap& bitmap, const bool pre
                                                        CrossPointSettings::SLEEP_SCREEN_COVER_FILTER::NO_FILTER);
 
   if (!renderer.drawBitmap(bitmap, x, y, pageWidth, pageHeight, cropX, cropY, preserveBackground)) {
-    // Widget rides this frame: the bitmap failed to draw, so this flush is all the user sees.
-    drawSleepWidget();
     renderer.displayBuffer(kSleepClean);
     return;
   }
@@ -787,8 +788,6 @@ void SleepActivity::renderBitmapSleepScreen(const Bitmap& bitmap, const bool pre
   const bool absolute = hasGreyscale && renderer.grayscaleCapabilities(sleepGrayscaleMode(renderer)).supported();
   const BwFrameKeeper bwFrame(renderer, hasGreyscale && !absolute);
   if (!bwFrame.ready()) {
-    // Widget rides this frame: grayscale is skipped, so this B/W flush is final.
-    drawSleepWidget();
     renderer.displayBuffer(kSleepClean);
     return;
   }
@@ -802,8 +801,6 @@ void SleepActivity::renderBitmapSleepScreen(const Bitmap& bitmap, const bool pre
     // the differential nudge then lands unevenly (blotchy noise in gray areas).
     renderer.displayGrayscaleBase(HalDisplay::HALF_REFRESH);
   } else {
-    // Widget rides this frame: no grayscale planes, so this B/W flush is final.
-    drawSleepWidget();
     renderer.displayBuffer(kSleepClean);
   }
 
@@ -833,10 +830,6 @@ void SleepActivity::renderBitmapSleepScreen(const Bitmap& bitmap, const bool pre
         renderer.copyGrayscaleMsbBuffers();
     }
     if (ready)
-      // Widget note: on the grayscale path this frame ends in displayGrayBuffer(), where
-      // the B/W buffer the widget paints into is replaced by the plane buffers, so the
-      // widget does not appear. Cover modes therefore only show the widget when the image
-      // renders without grayscale. Revisit if cover-mode widgets are wanted.
       renderer.displayGrayBuffer();
     else
       LOG_ERR("SLP", "Incomplete grayscale image; keeping the current display");
@@ -886,8 +879,6 @@ bool SleepActivity::renderTransparentOverlayPng(const std::string& path) const {
   const bool absolute = renderer.grayscaleCapabilities(sleepGrayscaleMode(renderer)).supported();
   const BwFrameKeeper bwFrame(renderer, !absolute);
   if (!bwFrame.ready()) {
-    // Widget rides this frame: grayscale is skipped, so this B/W flush is final.
-    drawSleepWidget();
     renderer.displayBuffer(kSleepClean);
     return true;
   }
@@ -914,10 +905,6 @@ bool SleepActivity::renderTransparentOverlayPng(const std::string& path) const {
   }
   renderer.copyGrayscaleMsbBuffers();
 
-  // Widget note: on the grayscale path this frame ends in displayGrayBuffer(), where
-  // the B/W buffer the widget paints into is replaced by the plane buffers, so the
-  // widget does not appear. Cover modes therefore only show the widget when the image
-  // renders without grayscale. Revisit if cover-mode widgets are wanted.
   renderer.displayGrayBuffer();
   renderer.setRenderMode(GfxRenderer::BW);
   return true;

@@ -14,6 +14,7 @@ class SleepActivity final : public Activity {
 
  private:
   void drawSleepWidget() const;
+  void renderSleepWidgetScreen() const;
   void renderDefaultSleepScreen() const;
   void renderCustomSleepScreen() const;
   void renderCoverSleepScreen() const;
