@@ -2,7 +2,7 @@
 # Produce the files uploaded to a GitHub release.
 #
 # Copies the firmware images built for one PlatformIO environment into dist/ as
-# tofu-reader-<version>-<env>.bin and tofu-reader-<version>-<env>-factory.bin,
+# tofu-reader-v<version>-<env>.bin and tofu-reader-v<version>-<env>-factory.bin,
 # then prints their name, size and sha256 so they can be pasted into the release
 # description. Nothing is built, uploaded, or sent to the GitHub API.
 
@@ -75,8 +75,10 @@ done
 DIST_DIR="$REPO_ROOT/dist"
 mkdir -p "$DIST_DIR"
 
-APP_DEST="$DIST_DIR/tofu-reader-${VERSION}-${ENV_NAME}.bin"
-FACTORY_DEST="$DIST_DIR/tofu-reader-${VERSION}-${ENV_NAME}-factory.bin"
+# The OTA updater composes the asset name from the release tag exactly; this repo
+# tags v<VERSION>, so the "v" must be part of the file name.
+APP_DEST="$DIST_DIR/tofu-reader-v${VERSION}-${ENV_NAME}.bin"
+FACTORY_DEST="$DIST_DIR/tofu-reader-v${VERSION}-${ENV_NAME}-factory.bin"
 
 cp -f -- "$APP_SRC" "$APP_DEST"
 cp -f -- "$FACTORY_SRC" "$FACTORY_DEST"
@@ -92,7 +94,7 @@ describe() {
   echo "  sha256: $sha"
 }
 
-echo "Release assets for Tofu Reader $VERSION ($ENV_NAME):"
+echo "Release assets for Tofu Reader v$VERSION ($ENV_NAME):"
 echo
 describe "$APP_DEST"
 echo
