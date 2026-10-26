@@ -4,6 +4,7 @@
 // HttpDownloader.h pulls Arduino/SdFat, whose macros collide with lwip's
 // ip4_addr.h unless seen first. Pin this order; clang-format would otherwise sort
 // the local header last and break the build.
+#include "OtaVersionCompare.h"
 #include "HttpDownloader.h"
 #include <Logging.h>
 #include <Memory.h>
@@ -92,46 +93,11 @@ OtaUpdater::OtaUpdaterError OtaUpdater::checkForUpdate() {
 }
 
 bool OtaUpdater::isUpdateNewer() const {
-  if (!updateAvailable || latestVersion.empty() || latestVersion == CROSSPOINT_VERSION) {
+  if (!updateAvailable || latestVersion.empty()) {
     return false;
   }
 
-  int currentMajor, currentMinor, currentPatch;
-  int latestMajor, latestMinor, latestPatch;
-
-  const auto currentVersion = CROSSPOINT_VERSION;
-
-  // semantic version check (only match on 3 segments)
-  sscanf(latestVersion.c_str(), "%d.%d.%d", &latestMajor, &latestMinor, &latestPatch);
-  sscanf(currentVersion, "%d.%d.%d", &currentMajor, &currentMinor, &currentPatch);
-
-  /*
-   * Compare major versions.
-   * If they differ, return true if latest major version greater than current major version
-   * otherwise return false.
-   */
-  if (latestMajor != currentMajor) return latestMajor > currentMajor;
-
-  /*
-   * Compare minor versions.
-   * If they differ, return true if latest minor version greater than current minor version
-   * otherwise return false.
-   */
-  if (latestMinor != currentMinor) return latestMinor > currentMinor;
-
-  /*
-   * Check patch versions.
-   */
-  if (latestPatch != currentPatch) return latestPatch > currentPatch;
-
-  // If we reach here, it means all segments are equal.
-  // One final check, if we're on an RC build (contains "-rc"), we should consider the latest version as newer even if
-  // the segments are equal, since RC builds are pre-release versions.
-  if (strstr(currentVersion, "-rc") != nullptr) {
-    return true;
-  }
-
-  return false;
+  return ota_version::isNewer(latestVersion.c_str(), CROSSPOINT_VERSION);
 }
 
 const std::string& OtaUpdater::getLatestVersion() const { return latestVersion; }
