@@ -1,10 +1,10 @@
 # Tofu Reader
 
 A fork of [CrossPoint Reader](https://github.com/crosspoint-reader/crosspoint-reader) for the **Xteink
-X4 Pro**, with two things added on top: frontlight presets you can cycle with a double tap, and sleep
-screen widgets you actually want to look at.
+X4 Pro**, with a short list of additions on top: frontlight presets you can cycle with a double tap,
+four sleep screen widgets, and a todo list you can reorder from the shelf.
 
-Tofu Reader 1.0.0 is based on CrossPoint 2.0.0rc, upstream commit `facaa87e`.
+Tofu Reader 1.1.0 is based on CrossPoint 2.0.0rc, upstream commit `facaa87e`.
 
 > **Xteink X4 Pro only.** These builds target the `x4pro` PlatformIO environment (ESP32-S3). Do not
 > flash them on an X3, X4, or Picco. CrossPoint covers those devices, this fork does not.
@@ -32,15 +32,29 @@ The widget is a sleep screen mode of its own, not an overlay on top of the other
 | --- | --- |
 | **Calendar** | The full month, Monday first, weekday header, today boxed |
 | **Todo list** | Up to eight rows in large type, a checkbox per row, block centred on the page |
+| **Now Reading** | The book you were last in: cover, title, author, progress bar and percentage |
+| **Clips** | One saved clipping as a quote card, with the book title and author underneath |
 
 A finished todo keeps its X and stays on the sleep screen until you delete it, so the page doubles as
 a record of the day instead of a list that empties itself.
 
-Todos are edited on the device, no computer needed: **Settings > Display > Todo list**. Add an item,
-edit its text, mark it done or not done, delete it. Sixteen items maximum, 64 bytes each. They live in
-`/.crosspoint/todos.json`.
+**Now Reading** resolves the book you last had open, falling back to the top of the recent list. The
+cover is rendered at widget size in 1-bit through the same converter the home grid uses, so nothing is
+resampled during the sleep paint, and it keeps the book's own aspect ratio inside a framed 280x420 box.
+The percentage comes from the same progress file the home screen reads.
 
-Both widgets use the same layout rules: 40 px margin on all four sides, content block centred
+**Clips** picks one clipping from the current book and sets it as a quote card. The pick rotates once
+per calendar day and only considers real passages, at least six words and 80 to 300 bytes, so a
+four-word fragment never ends up filling the panel. With no clipping saved yet it shows a placeholder
+line instead of an empty card.
+
+Todos are edited on the device, no computer needed: **Settings > Display > Todo list**. Add an item,
+edit its text, mark it done or not done, move it up or down, delete it. The move entries only appear
+where the row can actually move, so the first item never offers Move up. Sixteen items maximum, 64
+bytes each. They live in `/.crosspoint/todos.json`, and the order you set is the order the widget
+draws.
+
+All four widgets use the same layout rules: 40 px margin on all four sides, content block centred
 vertically, text sized for the panel rather than scaled down from a desktop face.
 
 ## What comes from CrossPoint
@@ -48,7 +62,7 @@ vertically, text sized for the panel rather than scaled down from a desktop face
 Everything else. The EPUB engine (rendering, hyphenation, kerning, CJK ruby, tables, images,
 footnotes, dictionary, KOReader sync), the library and file browser, WiFi transfer and the web UI,
 OPDS, custom SD card fonts, USB drive mode, screenshots, Bluetooth page turners and the settings
-system are upstream's work, unchanged apart from the two features above.
+system are upstream's work, unchanged apart from the additions above.
 
 Read [CrossPoint's README](https://github.com/crosspoint-reader/crosspoint-reader#readme) and
 [user guide](https://github.com/crosspoint-reader/crosspoint-reader/blob/develop/USER_GUIDE.md) for
@@ -67,7 +81,7 @@ stuck with no recovery path.
 
 ### 1. Update from the SD card (normal path)
 
-1. Download `tofu-reader-v1.0.0-x4pro.bin` from [Releases](../../releases).
+1. Download `tofu-reader-v1.1.0-x4pro.bin` from [Releases](../../releases).
 2. Copy it anywhere on the SD card.
 3. On the device open **Settings > SD Card Firmware Update**, pick the file, confirm.
 4. The image is written to the inactive slot and the device reboots into it. The previous image stays
@@ -75,11 +89,11 @@ stuck with no recovery path.
 
 ### 2. Full flash (fresh device, or one that will not boot)
 
-Download `tofu-reader-v1.0.0-x4pro-factory.bin` and write it at offset `0x0`:
+Download `tofu-reader-v1.1.0-x4pro-factory.bin` and write it at offset `0x0`:
 
 ```bash
 esptool.py --chip esp32s3 --port /dev/ttyACM0 --baud 921600 \
-  write_flash 0x0 tofu-reader-v1.0.0-x4pro-factory.bin
+  write_flash 0x0 tofu-reader-v1.1.0-x4pro-factory.bin
 ```
 
 That file is a complete flash image: bootloader at `0x0`, partition table at `0x8000`, application at
@@ -103,8 +117,11 @@ the FreeInk SDK submodule, so the first build takes a while.
 | Path | Contents |
 | --- | --- |
 | `/.crosspoint/settings.json` | Device settings, same format as CrossPoint plus the fork's preset and widget keys |
-| `/.crosspoint/todos.json` | Todo list for the sleep screen widget |
+| `/.crosspoint/todos.json` | Todo list for the sleep screen widget, in display order |
 | `/.crosspoint/state.json` | Resume and runtime state |
+
+The per-book cache also holds `cover_widget_280x420_bw.bmp` once the Now Reading widget has drawn
+that book, so the cover is not re-decoded every time the device sleeps.
 
 Settings written by CrossPoint are read as is. The one migration this fork performs runs once on the
 first boot of the preset feature: a saved `ToggleFrontlight` Home button action becomes
@@ -112,13 +129,19 @@ first boot of the preset feature: a saved `ToggleFrontlight` Home button action 
 
 ## Updates and versioning
 
-`VERSION` at the repo root is the source of truth, and the target is appended to it, so the firmware
-reports `1.0.0-x4pro` in **Settings > About** and in its HTTP user agent. The local download page
-carries the commit as well: `1.0.0-dev+<short sha>` for a build that is not the release tag, and bare
-`1.0.0` at the tag.
+`VERSION` at the repo root is the source of truth, and it must agree with the `version =` line in
+`platformio.ini`: the release workflow rejects a tag that disagrees with it, so the two are bumped
+together. The target is appended to the version, so the firmware reports `1.1.0-x4pro` in
+**Settings > About** and in its HTTP user agent.
 
-**Settings > Check for updates** reads releases from this repository, not from upstream, so a device
-running Tofu Reader is never pulled onto a CrossPoint build.
+Bumps follow the rule in [docs/versioning.md](./docs/versioning.md): `x.x.1` for a fix, `x.1.x` for a
+new feature, `1.x.x` for a breaking change. `python3 scripts/bump_version.py minor` rewrites both
+files, all-or-nothing, and prints the git commands that cut the release.
+
+**Settings > Check for updates** reads the latest release published in this repository, not from
+upstream, so a device running Tofu Reader is never pulled onto a CrossPoint build. The updater matches
+an asset named `tofu-reader-v<tag>-x4pro.bin`, which is what `scripts/package-release.sh` produces;
+a release packaged any other way is invisible to it.
 
 ## Following upstream
 
@@ -132,6 +155,7 @@ this repository.
 ## Documentation
 
 - [User Guide](./USER_GUIDE.md)
+- [Versioning and releases](./docs/versioning.md)
 - [Web server usage](./docs/webserver.md)
 - [Project scope](./SCOPE.md)
 - [Contributing docs](./docs/contributing/README.md)
