@@ -306,13 +306,8 @@ inline std::vector<SettingInfo> getSettingsList(const SdCardFontRegistry* regist
         std::remove_if(v.begin(), v.end(), [](const SettingInfo& s) { return s.nameId == StrId::STR_TILT_PAGE_TURN; }),
         v.end());
   }
-  // The widget picker is meaningless unless the sleep screen is the widget
-  // itself; the key stays persisted so switching modes does not lose the choice.
-  if (SETTINGS.sleepScreen != CrossPointSettings::WIDGET) {
-    v.erase(std::remove_if(v.begin(), v.end(),
-                           [](const SettingInfo& s) { return s.nameId == StrId::STR_SLEEP_SCREEN_WIDGET; }),
-            v.end());
-  }
+  // The widget picker and the other widget options are edited from Home >
+  // Widgets; they carry no category, so sectionFor() already hides them here.
   // Hidden on touch boards: the Home button actions (X4 Pro) or the short
   // power click (other touch boards) cover these shortcuts.
   if (BoardConfig::hasTouch()) {

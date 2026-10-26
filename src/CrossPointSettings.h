@@ -253,6 +253,19 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
     SLEEP_WIDGET_COUNT
   };
   uint8_t sleepScreenWidget = SLEEP_WIDGET_NONE;
+  // Widgets menu options, edited from Home > Widgets. Persisted and kept out of
+  // the on-device Settings list and the Web Settings API.
+  enum WIDGET_THEME : uint8_t { WIDGET_THEME_LIGHT = 0, WIDGET_THEME_DARK = 1, WIDGET_THEME_COUNT };
+  enum WIDGET_TEXT_SIZE : uint8_t { WIDGET_TEXT_NORMAL = 0, WIDGET_TEXT_LARGE = 1, WIDGET_TEXT_SIZE_COUNT };
+  uint8_t widgetTheme = WIDGET_THEME_LIGHT;
+  // Keep done items on the todo widget instead of hiding them.
+  uint8_t widgetShowCompleted = 1;
+  // Rows the todo widget may show (1..8); the widget still clamps to the space.
+  uint8_t widgetTodoRows = 8;
+  // Widget body text size. Large keeps the shipped look.
+  uint8_t widgetTextSize = WIDGET_TEXT_LARGE;
+  // Calendar widget weeks start on Sunday instead of Monday.
+  uint8_t widgetCalendarSundayFirst = 0;
   // Status bar settings
   uint8_t statusBarChapterPageCount = 1;
   uint8_t statusBarBookProgressPercentage = 1;

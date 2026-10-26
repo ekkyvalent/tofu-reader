@@ -671,6 +671,12 @@ void SleepActivity::drawSleepWidget() const {
 }
 
 void SleepActivity::renderSleepWidgetScreen() const {
+  // The Dark theme inverts at the output stage (like night mode) instead of
+  // flipping the framebuffer. That keeps the framebuffer logical, so
+  // drawBitmap's preserveImagePolarity leaves the Now Reading cover in its
+  // normal polarity while the rest of the page renders white on black.
+  const bool dark = SETTINGS.widgetTheme == CrossPointSettings::WIDGET_THEME_DARK;
+  display.setInverted(dark);
   renderer.clearScreen();
   if (SETTINGS.sleepScreenWidget == CrossPointSettings::SLEEP_WIDGET_NONE) {
     // Entering Widget mode with nothing picked must not produce an empty page.
@@ -680,8 +686,8 @@ void SleepActivity::renderSleepWidgetScreen() const {
   } else {
     drawSleepWidget();
   }
-  // A widget is black on white, so this screen skips the invert step.
   renderer.displayBuffer(kSleepClean);
+  display.setInverted(false);
 }
 
 void SleepActivity::renderCustomSleepScreen() const {

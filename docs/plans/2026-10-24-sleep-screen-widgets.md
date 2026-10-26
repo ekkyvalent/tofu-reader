@@ -3,6 +3,14 @@
 > **For Hermes:** execute task-by-task through Command Code CLI, one build gate per phase.
 > Verify each phase independently (diff, build exit code, artifact strings) before starting the next.
 
+> **Update (2026-10-26):** the widget picker moved out of Settings > Display into a top-level
+> **Widgets** entry on the main menu, which now also owns the widget theme and the per-widget
+> options (show completed tasks, todo rows, text size, week start), and the todo editor is reached
+> at Widgets > Todo list. `sleepScreenWidget` and the new widget keys are persisted but no longer
+> appear in the on-device Settings list or the Web Settings API. The extension rules below
+> still hold: append-only enum, one widget at a time, one full-frame paint, no ticking, and no
+> heap or IO in the draw path.
+
 **Goal:** put one small, optional widget (clock first) on the e-ink sleep screen, chosen in Settings, painted once at sleep entry so it costs zero extra refreshes.
 
 **Architecture:** exclusive single widget per sleep screen, not a multi-slot layout. A `SleepWidgetKind` enum plus one draw function per kind in a small registry module. The owning `SleepActivity` captures the data (time, battery) into a context struct before painting and calls the widget draw inside the same frame, before the single buffer flush. No heap, no SD or file IO in the draw path, because sleep entry runs on a time budget.

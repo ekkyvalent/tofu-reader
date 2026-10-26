@@ -17,7 +17,7 @@ namespace fui = freeink::ui;
 
 namespace {
 // Entry actions of the per-item option menu, in the order they can appear.
-enum ItemAction : int { kToggle, kMoveUp, kMoveDown, kEdit, kDelete };
+enum ItemAction : int { kToggle, kMoveTop, kMoveBottom, kMoveUp, kMoveDown, kEdit, kDelete };
 }  // namespace
 
 TodoListActivity::TodoListActivity(GfxRenderer& renderer, MappedInputManager& mappedInput)
@@ -87,7 +87,7 @@ void TodoListActivity::handleSelection() {
 
 void TodoListActivity::addItem() {
   auto keyboard = makeUniqueNoThrow<KeyboardEntryActivity>(renderer, mappedInput, tr(STR_TODO_ADD), std::string(),
-                                                          TodoStore::kMaxTextBytes, InputType::Text);
+                                                           TodoStore::kMaxTextBytes, InputType::Text);
   if (!keyboard) {
     LOG_ERR("TODO", "OOM: todo add keyboard");
     return;
@@ -105,7 +105,7 @@ void TodoListActivity::editItem(const size_t index) {
   if (index >= items.size()) return;
 
   auto keyboard = makeUniqueNoThrow<KeyboardEntryActivity>(renderer, mappedInput, tr(STR_TODO_EDIT), items[index].text,
-                                                          TodoStore::kMaxTextBytes, InputType::Text);
+                                                           TodoStore::kMaxTextBytes, InputType::Text);
   if (!keyboard) {
     LOG_ERR("TODO", "OOM: todo edit keyboard");
     return;
@@ -128,18 +128,22 @@ void TodoListActivity::showItemOptions(const size_t index) {
   // Built list so a move entry only exists where the row can actually move.
   std::vector<std::string> labels;
   std::vector<int> actions;
-  labels.reserve(5);
-  actions.reserve(5);
+  labels.reserve(7);
+  actions.reserve(7);
 
   labels.emplace_back(I18N.get(toggleLabel));
   actions.push_back(kToggle);
   if (index > 0) {
+    labels.emplace_back(tr(STR_TODO_MOVE_TOP));
+    actions.push_back(kMoveTop);
     labels.emplace_back(tr(STR_TODO_MOVE_UP));
     actions.push_back(kMoveUp);
   }
   if (index + 1 < items.size()) {
     labels.emplace_back(tr(STR_TODO_MOVE_DOWN));
     actions.push_back(kMoveDown);
+    labels.emplace_back(tr(STR_TODO_MOVE_BOTTOM));
+    actions.push_back(kMoveBottom);
   }
   labels.emplace_back(tr(STR_TODO_EDIT));
   actions.push_back(kEdit);
@@ -161,9 +165,20 @@ void TodoListActivity::showItemOptions(const size_t index) {
                          rebuildRowItems();
                          requestUpdate();
                          break;
+                       case kMoveTop:
+                       case kMoveBottom:
                        case kMoveUp:
                        case kMoveDown: {
-                         const size_t newIndex = actions[selected] == kMoveUp ? index - 1 : index + 1;
+                         size_t newIndex = index;
+                         if (actions[selected] == kMoveUp) {
+                           newIndex = index - 1;
+                         } else if (actions[selected] == kMoveDown) {
+                           newIndex = index + 1;
+                         } else if (actions[selected] == kMoveTop) {
+                           newIndex = 0;
+                         } else {
+                           newIndex = current.size() - 1;
+                         }
                          TODO_STORE.moveItem(index, newIndex);
                          nav.selected = static_cast<int>(newIndex);
                          rebuildRowItems();
@@ -186,7 +201,7 @@ void TodoListActivity::confirmDelete(const size_t index) {
   if (index >= items.size()) return;
 
   auto confirmation = makeUniqueNoThrow<ConfirmationActivity>(renderer, mappedInput, items[index].text, std::string(),
-                                                             std::string(), tr(STR_TODO_DELETE));
+                                                              std::string(), tr(STR_TODO_DELETE));
   if (!confirmation) {
     LOG_ERR("TODO", "OOM: todo delete confirmation");
     return;

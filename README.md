@@ -4,7 +4,7 @@ A fork of [CrossPoint Reader](https://github.com/crosspoint-reader/crosspoint-re
 X4 Pro**, with a short list of additions on top: frontlight presets you can cycle with a double tap,
 four sleep screen widgets, and a todo list you can reorder from the shelf.
 
-Tofu Reader 1.1.0 is based on CrossPoint 2.0.0rc, upstream commit `facaa87e`.
+Tofu Reader 1.2.0 is based on CrossPoint `develop`, upstream commit `9ba67ea5`.
 
 > **Xteink X4 Pro only.** These builds target the `x4pro` PlatformIO environment (ESP32-S3). Do not
 > flash them on an X3, X4, or Picco. CrossPoint covers those devices, this fork does not.
@@ -25,18 +25,20 @@ from the live light state, so the cycle stays correct even if the light is chang
 
 ### Sleep screen widgets
 
-The widget is a sleep screen mode of its own, not an overlay on top of the others. Choose
-**Settings > Display > Sleep Screen > Widget**, then pick which widget to show:
+The widget is a sleep screen mode of its own, not an overlay on top of the others. Open
+**Widgets** on the main menu and pick which widget to show; choosing one also switches the sleep
+screen to Widget mode:
 
 | Widget | What it draws |
 | --- | --- |
-| **Calendar** | The full month, Monday first, weekday header, today boxed |
-| **Todo list** | Up to eight rows in large type, a checkbox per row, block centred on the page |
+| **Calendar** | The full month, weekday header, today boxed (Monday or Sunday first) |
+| **Todo list** | Up to eight rows, a checkbox per row, block centred on the page |
 | **Now Reading** | The book you were last in: cover, title, author, progress bar and percentage |
 | **Clips** | One saved clipping as a quote card, with the book title and author underneath |
 
-A finished todo keeps its X and stays on the sleep screen until you delete it, so the page doubles as
-a record of the day instead of a list that empties itself.
+A finished todo is struck through and keeps its checkbox, and by default it stays on the sleep screen
+until you delete it, so the page doubles as a record of the day instead of a list that empties itself.
+**Show completed tasks** turns that off if you prefer a clean list.
 
 **Now Reading** resolves the book you last had open, falling back to the top of the recent list. The
 cover is rendered at widget size in 1-bit through the same converter the home grid uses, so nothing is
@@ -48,11 +50,16 @@ per calendar day and only considers real passages, at least six words and 80 to 
 four-word fragment never ends up filling the panel. With no clipping saved yet it shows a placeholder
 line instead of an empty card.
 
-Todos are edited on the device, no computer needed: **Settings > Display > Todo list**. Add an item,
-edit its text, mark it done or not done, move it up or down, delete it. The move entries only appear
-where the row can actually move, so the first item never offers Move up. Sixteen items maximum, 64
-bytes each. They live in `/.crosspoint/todos.json`, and the order you set is the order the widget
-draws.
+Everything else lives in the same **Widgets** menu: **Widget theme** (Light or Dark, where Dark
+inverts the page to white on black while the Now Reading cover keeps its normal polarity),
+**Show completed tasks**, **Todo rows** (1-8), **Widget text size** (Normal or Large), and
+**Week starts on Sunday** for the calendar.
+
+Todos are edited on the device, no computer needed: **Widgets > Todo list**. Add an item, edit its
+text, mark it done or not done, move it up, move it down, send it to the top or the bottom, delete it.
+The move entries only appear where the row can actually move, so the first item never offers Move up.
+Sixteen items maximum, 64 bytes each. They live in `/.crosspoint/todos.json`, and the order you set is
+the order the widget draws.
 
 All four widgets use the same layout rules: 40 px margin on all four sides, content block centred
 vertically, text sized for the panel rather than scaled down from a desktop face.
@@ -81,7 +88,7 @@ stuck with no recovery path.
 
 ### 1. Update from the SD card (normal path)
 
-1. Download `tofu-reader-v1.1.0-x4pro.bin` from [Releases](../../releases).
+1. Download `tofu-reader-v1.2.0-x4pro.bin` from [Releases](../../releases).
 2. Copy it anywhere on the SD card.
 3. On the device open **Settings > SD Card Firmware Update**, pick the file, confirm.
 4. The image is written to the inactive slot and the device reboots into it. The previous image stays
@@ -89,11 +96,11 @@ stuck with no recovery path.
 
 ### 2. Full flash (fresh device, or one that will not boot)
 
-Download `tofu-reader-v1.1.0-x4pro-factory.bin` and write it at offset `0x0`:
+Download `tofu-reader-v1.2.0-x4pro-factory.bin` and write it at offset `0x0`:
 
 ```bash
 esptool.py --chip esp32s3 --port /dev/ttyACM0 --baud 921600 \
-  write_flash 0x0 tofu-reader-v1.1.0-x4pro-factory.bin
+  write_flash 0x0 tofu-reader-v1.2.0-x4pro-factory.bin
 ```
 
 That file is a complete flash image: bootloader at `0x0`, partition table at `0x8000`, application at
@@ -131,7 +138,7 @@ first boot of the preset feature: a saved `ToggleFrontlight` Home button action 
 
 `VERSION` at the repo root is the source of truth, and it must agree with the `version =` line in
 `platformio.ini`: the release workflow rejects a tag that disagrees with it, so the two are bumped
-together. The target is appended to the version, so the firmware reports `1.1.0-x4pro` in
+together. The target is appended to the version, so the firmware reports `1.2.0-x4pro` in
 **Settings > About** and in its HTTP user agent.
 
 Bumps follow the rule in [docs/versioning.md](./docs/versioning.md): `x.x.1` for a fix, `x.1.x` for a
@@ -179,8 +186,8 @@ This firmware exists because of other people's work. Everything here is MIT unle
 
 **Upstream.** Tofu Reader is a fork of [CrossPoint Reader](https://github.com/crosspoint-reader/crosspoint-reader),
 Copyright (c) 2025 CrossPoint Reader organization, MIT licensed. The reading engine, UI, device support
-and documentation are upstream's work. This fork tracks upstream `develop`; the last rebase was at
-commit `facaa87e`.
+and documentation are upstream's work. This fork tracks upstream `develop`; the last upstream sync
+was at commit `9ba67ea5`.
 
 **FreeInk SDK.** The hardware abstraction layer, display drivers, SD card, network and font stacks come
 from [freeink-sdk](https://github.com/Free-Ink/freeink-sdk), Copyright (c) 2026 FreeInk, MIT licensed.

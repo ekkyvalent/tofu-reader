@@ -33,7 +33,6 @@ enum class SettingAction {
   HomeButton,
   About,
   FrontlightPresets,
-  TodoList,
 };
 
 struct SettingInfo {

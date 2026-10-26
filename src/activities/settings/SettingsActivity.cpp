@@ -35,7 +35,6 @@
 #include "SilentRestart.h"
 #include "StatusBarSettingsActivity.h"
 #include "TextSettingsActivity.h"
-#include "TodoListActivity.h"
 #include "activities/network/WifiSelectionActivity.h"
 #include "activities/util/IntervalSelectionActivity.h"
 #include "components/UITheme.h"
@@ -123,13 +122,7 @@ void SettingsActivity::rebuildSettings() {
 
   for (auto& setting : all) {
     if (sectionFor(setting) != section || !showOnDevice(setting)) continue;
-    const bool afterSleepWidget = setting.nameId == StrId::STR_SLEEP_SCREEN_WIDGET;
     settings.push_back(std::move(setting));
-    // The todo editor sits next to the sleep widget that renders the same
-    // list. It is hardware-independent, so every board gets the row.
-    if (afterSleepWidget) {
-      addAction(SettingsSection::Display, StrId::STR_TODO_LIST, SettingAction::TodoList);
-    }
   }
 
   if (Frontlight.present()) {
@@ -424,13 +417,6 @@ void SettingsActivity::toggleSelectedSetting() {
           startActivityForResult(std::move(activity), [this](const ActivityResult&) { requestUpdate(); });
         } else {
           LOG_ERR("SETTINGS", "OOM: FrontlightPresetsActivity");
-        }
-        break;
-      case SettingAction::TodoList:
-        if (auto activity = makeUniqueNoThrow<TodoListActivity>(renderer, mappedInput)) {
-          startActivityForResult(std::move(activity), [this](const ActivityResult&) { requestUpdate(); });
-        } else {
-          LOG_ERR("SETTINGS", "OOM: TodoListActivity");
         }
         break;
       case SettingAction::None:

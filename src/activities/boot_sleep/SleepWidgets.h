@@ -14,15 +14,16 @@ struct Context {
   uint8_t todayColumn = 0;  // 0 = Monday .. 6 = Sunday
   uint8_t firstColumn = 0;  // weekday column of day 1, same mapping
   uint8_t daysInMonth = 0;
+  bool calendarSundayFirst = false;  // week starts on Sunday instead of Monday
   bool batteryValid = false;
   uint16_t batteryPercent = 0;
   int pageWidth = 0;
   int pageHeight = 0;
 
-  // Todo widget snapshot: every stored item, done or not, copied out of
-  // TodoStore so the draw path never touches std::string or the SD card. A
-  // finished item stays on the sleep screen as a record of the day until the
-  // user deletes it in Settings. Sized +1 for the terminator.
+  // Todo widget snapshot: the items the widget shows, copied out of TodoStore
+  // so the draw path never touches std::string or the SD card. Done items are
+  // included unless "Show completed tasks" is off (Home > Widgets). Sized +1 for
+  // the terminator.
   static constexpr uint8_t kMaxWidgetItems = 8;
   uint8_t todoCount = 0;
   uint8_t todoOverflow = 0;  // items beyond the panel-fit cap that did not fit
@@ -35,9 +36,9 @@ struct Context {
   static constexpr uint8_t kBookTitleSize = 72;
   static constexpr uint8_t kBookAuthorSize = 64;
   static constexpr uint16_t kClipQuoteSize = 256;  // 255 bytes plus terminator
-  bool bookResolved = false;                      // a book path was found
-  bool clipValid = false;                         // an eligible quote was captured
-  int8_t bookPercent = -1;                        // 0..100, or -1 when unknown
+  bool bookResolved = false;                       // a book path was found
+  bool clipValid = false;                          // an eligible quote was captured
+  int8_t bookPercent = -1;                         // 0..100, or -1 when unknown
   char bookTitle[kBookTitleSize] = {};
   char bookAuthor[kBookAuthorSize] = {};
   char clipQuote[kClipQuoteSize] = {};

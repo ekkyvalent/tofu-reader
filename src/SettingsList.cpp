@@ -52,8 +52,26 @@ void forEachBaseSetting(SettingVisitor visit, void* context) {
   emit(SettingInfo::Enum(StrId::STR_QUICK_RESUME_TIMEOUT, &CrossPointSettings::quickResumeSleepScreen,
                          {StrId::STR_STATE_OFF, StrId::STR_STATE_ON}, "quickResumeSleepScreen",
                          StrId::STR_CAT_DISPLAY));
+  // The widget picker lives in Home > Widgets now, so it stays persisted but out
+  // of the on-device Settings list (no category) and the Web Settings API.
   emit(SettingInfo::StaticEnum(StrId::STR_SLEEP_SCREEN_WIDGET, &CrossPointSettings::sleepScreenWidget,
-                               SLEEP_WIDGET_VALUES, "sleepScreenWidget", StrId::STR_CAT_DISPLAY));
+                               SLEEP_WIDGET_VALUES, "sleepScreenWidget")
+           .withWebHidden());
+  // Widgets menu options, edited from Home > Widgets. Persisted, device-only.
+  emit(SettingInfo::Enum(StrId::STR_WIDGET_THEME, &CrossPointSettings::widgetTheme, {StrId::STR_LIGHT, StrId::STR_DARK},
+                         "widgetTheme")
+           .withWebHidden());
+  emit(SettingInfo::Toggle(StrId::STR_WIDGET_SHOW_COMPLETED, &CrossPointSettings::widgetShowCompleted,
+                           "widgetShowCompleted")
+           .withWebHidden());
+  emit(SettingInfo::Value(StrId::STR_WIDGET_TODO_ROWS, &CrossPointSettings::widgetTodoRows, {1, 8, 1}, "widgetTodoRows")
+           .withWebHidden());
+  emit(SettingInfo::Enum(StrId::STR_WIDGET_TEXT_SIZE, &CrossPointSettings::widgetTextSize,
+                         {StrId::STR_WIDGET_TEXT_NORMAL, StrId::STR_WIDGET_TEXT_LARGE}, "widgetTextSize")
+           .withWebHidden());
+  emit(SettingInfo::Toggle(StrId::STR_WIDGET_CALENDAR_SUNDAY, &CrossPointSettings::widgetCalendarSundayFirst,
+                           "widgetCalendarSundayFirst")
+           .withWebHidden());
   emit(SettingInfo::Enum(StrId::STR_HIDE_BATTERY, &CrossPointSettings::hideBatteryPercentage,
                          {StrId::STR_NEVER, StrId::STR_IN_READER, StrId::STR_ALWAYS}, "hideBatteryPercentage",
                          StrId::STR_CAT_DISPLAY));

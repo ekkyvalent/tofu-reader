@@ -46,10 +46,9 @@ constexpr int kTodoHeadingGap = 12;
 constexpr int kTodoOverflowHeight = kPinnedNoto14Line;
 
 constexpr StrId MONTH_LABELS[12] = {
-    StrId::STR_WIDGET_MONTH_JAN, StrId::STR_WIDGET_MONTH_FEB, StrId::STR_WIDGET_MONTH_MAR,
-    StrId::STR_WIDGET_MONTH_APR, StrId::STR_WIDGET_MONTH_MAY, StrId::STR_WIDGET_MONTH_JUN,
-    StrId::STR_WIDGET_MONTH_JUL, StrId::STR_WIDGET_MONTH_AUG, StrId::STR_WIDGET_MONTH_SEP,
-    StrId::STR_WIDGET_MONTH_OCT, StrId::STR_WIDGET_MONTH_NOV, StrId::STR_WIDGET_MONTH_DEC,
+    StrId::STR_WIDGET_MONTH_JAN, StrId::STR_WIDGET_MONTH_FEB, StrId::STR_WIDGET_MONTH_MAR, StrId::STR_WIDGET_MONTH_APR,
+    StrId::STR_WIDGET_MONTH_MAY, StrId::STR_WIDGET_MONTH_JUN, StrId::STR_WIDGET_MONTH_JUL, StrId::STR_WIDGET_MONTH_AUG,
+    StrId::STR_WIDGET_MONTH_SEP, StrId::STR_WIDGET_MONTH_OCT, StrId::STR_WIDGET_MONTH_NOV, StrId::STR_WIDGET_MONTH_DEC,
 };
 
 // Monday-first.
@@ -57,6 +56,10 @@ constexpr StrId WEEKDAY_LABELS[7] = {
     StrId::STR_WIDGET_DOW_MON, StrId::STR_WIDGET_DOW_TUE, StrId::STR_WIDGET_DOW_WED, StrId::STR_WIDGET_DOW_THU,
     StrId::STR_WIDGET_DOW_FRI, StrId::STR_WIDGET_DOW_SAT, StrId::STR_WIDGET_DOW_SUN,
 };
+
+// Widget body text size. Large keeps the shipped look.
+bool widgetLargeText() { return SETTINGS.widgetTextSize == CrossPointSettings::WIDGET_TEXT_LARGE; }
+int widgetBodyFont(const int largeId, const int normalId) { return widgetLargeText() ? largeId : normalId; }
 
 uint8_t daysInMonth(const uint16_t year, const uint8_t month) {
   static constexpr uint8_t DAYS[12] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
@@ -209,9 +212,12 @@ void copyCollapsed(char* out, const size_t outSize, const char* text, const size
   if (start > 0) {
     const auto lead = static_cast<unsigned char>(out[start - 1]);
     size_t expected = 1;
-    if ((lead & 0xE0) == 0xC0) expected = 2;
-    else if ((lead & 0xF0) == 0xE0) expected = 3;
-    else if ((lead & 0xF8) == 0xF0) expected = 4;
+    if ((lead & 0xE0) == 0xC0)
+      expected = 2;
+    else if ((lead & 0xF0) == 0xE0)
+      expected = 3;
+    else if ((lead & 0xF8) == 0xF0)
+      expected = 4;
     if (written - (start - 1) < expected) written = start - 1;
   }
   while (written > 0 && out[written - 1] == ' ') --written;
@@ -234,8 +240,8 @@ void trimTrailingSeparators(char* text) {
 // Greedy word wrap into caller-provided slices. Candidate lines are measured
 // in scratch with getTextWidth, so this allocates nothing and stops at the
 // caller's line cap.
-uint8_t wrapLines(const GfxRenderer& renderer, const int fontId, const char* text, const int maxWidth,
-                  LineSlice* lines, const uint8_t maxLines, char* scratch, const size_t scratchSize) {
+uint8_t wrapLines(const GfxRenderer& renderer, const int fontId, const char* text, const int maxWidth, LineSlice* lines,
+                  const uint8_t maxLines, char* scratch, const size_t scratchSize) {
   if (text == nullptr || lines == nullptr || scratch == nullptr || scratchSize < 2 || maxLines == 0) return 0;
   const size_t length = strlen(text);
   size_t pos = 0;
@@ -279,8 +285,8 @@ uint8_t wrapLines(const GfxRenderer& renderer, const int fontId, const char* tex
 // through fitTextToWidth, so an over-long line ends in an ellipsis instead of
 // being clipped by the panel.
 void drawWrappedLines(const GfxRenderer& renderer, const int fontId, const char* text, const LineSlice* lines,
-                      const uint8_t lineCount, const int x, const int y, const int lineHeight,
-                      const int maxWidth, const bool centered) {
+                      const uint8_t lineCount, const int x, const int y, const int lineHeight, const int maxWidth,
+                      const bool centered) {
   char raw[kLineScratchSize];
   char fitted[kLineScratchSize];
   int lineY = y;
@@ -302,7 +308,8 @@ void drawWrappedLines(const GfxRenderer& renderer, const int fontId, const char*
 
 void drawNowReading(const GfxRenderer& renderer, const Context& ctx) {
   const int labelLine = renderer.getLineHeight(NOTOSANS_12_FONT_ID);
-  const int titleLine = renderer.getLineHeight(NOTOSANS_14_FONT_ID);
+  const int titleFont = widgetBodyFont(NOTOSANS_14_FONT_ID, NOTOSANS_12_FONT_ID);
+  const int titleLine = renderer.getLineHeight(titleFont);
   const int authorLine = renderer.getLineHeight(NOTOSANS_12_FONT_ID);
   const int percentLine = renderer.getLineHeight(NOTOSANS_12_FONT_ID);
   const int blockWidth = ctx.pageWidth - 2 * kWidgetMargin;
@@ -312,14 +319,13 @@ void drawNowReading(const GfxRenderer& renderer, const Context& ctx) {
     LineSlice lines[kEmptyTextMaxLines];
     char scratch[kLineScratchSize];
     const uint8_t lineCount =
-        wrapLines(renderer, NOTOSANS_14_FONT_ID, empty, blockWidth, lines, kEmptyTextMaxLines, scratch,
-                  sizeof(scratch));
-    const int textLine = renderer.getLineHeight(NOTOSANS_14_FONT_ID);
+        wrapLines(renderer, titleFont, empty, blockWidth, lines, kEmptyTextMaxLines, scratch, sizeof(scratch));
+    const int textLine = titleLine;
     const int contentH = labelLine + kGapAfterLabel + lineCount * textLine;
     const int top = centeredTop(ctx.pageHeight, contentH);
     renderer.drawCenteredText(NOTOSANS_12_FONT_ID, top, tr(STR_WIDGET_NOW_READING));
-    drawWrappedLines(renderer, NOTOSANS_14_FONT_ID, empty, lines, lineCount, kWidgetMargin,
-                     top + labelLine + kGapAfterLabel, textLine, blockWidth, true);
+    drawWrappedLines(renderer, titleFont, empty, lines, lineCount, kWidgetMargin, top + labelLine + kGapAfterLabel,
+                     textLine, blockWidth, true);
     releaseCover();
     return;
   }
@@ -364,8 +370,8 @@ void drawNowReading(const GfxRenderer& renderer, const Context& ctx) {
   }
 
   char fitted[kLineScratchSize];
-  fitTextToWidth(renderer, NOTOSANS_14_FONT_ID, ctx.bookTitle, blockWidth, fitted, sizeof(fitted));
-  renderer.drawCenteredText(NOTOSANS_14_FONT_ID, y, fitted, true, EpdFontFamily::BOLD);
+  fitTextToWidth(renderer, titleFont, ctx.bookTitle, blockWidth, fitted, sizeof(fitted));
+  renderer.drawCenteredText(titleFont, y, fitted, true, EpdFontFamily::BOLD);
   y += titleLine + kGapTitleAuthor;
 
   fitTextToWidth(renderer, NOTOSANS_12_FONT_ID, ctx.bookAuthor, blockWidth, fitted, sizeof(fitted));
@@ -395,25 +401,25 @@ void drawClips(const GfxRenderer& renderer, const Context& ctx) {
   const int cardX = kWidgetMargin;
   const int cardWidth = ctx.pageWidth - 2 * kWidgetMargin;
   const int textWidth = cardWidth - 2 * kClipCardPaddingX;
-  const int quoteLine = renderer.getLineHeight(NOTOSANS_14_FONT_ID);
+  const int quoteFont = widgetBodyFont(NOTOSANS_14_FONT_ID, NOTOSANS_12_FONT_ID);
+  const int quoteLine = renderer.getLineHeight(quoteFont);
 
   LineSlice lines[kQuoteMaxLines];
   char scratch[kLineScratchSize];
   uint8_t lineCount = 0;
   if (ctx.clipValid) {
-    lineCount = wrapLines(renderer, NOTOSANS_14_FONT_ID, ctx.clipQuote, textWidth, lines, kQuoteMaxLines, scratch,
-                          sizeof(scratch));
+    lineCount =
+        wrapLines(renderer, quoteFont, ctx.clipQuote, textWidth, lines, kQuoteMaxLines, scratch, sizeof(scratch));
   }
 
   if (!ctx.clipValid || lineCount == 0) {
     const char* empty = tr(STR_WIDGET_CLIPS_EMPTY);
-    lineCount =
-        wrapLines(renderer, NOTOSANS_14_FONT_ID, empty, textWidth, lines, kEmptyTextMaxLines, scratch, sizeof(scratch));
+    lineCount = wrapLines(renderer, quoteFont, empty, textWidth, lines, kEmptyTextMaxLines, scratch, sizeof(scratch));
     const int cardHeight = 2 * kClipCardPaddingY + 3 * quoteLine;
     const int top = centeredTop(ctx.pageHeight, cardHeight);
     renderer.drawRect(cardX, top, cardWidth, cardHeight, 2, true);
-    drawWrappedLines(renderer, NOTOSANS_14_FONT_ID, empty, lines, lineCount, cardX + kClipCardPaddingX,
-                     top + kClipCardPaddingY, quoteLine, textWidth, true);
+    drawWrappedLines(renderer, quoteFont, empty, lines, lineCount, cardX + kClipCardPaddingX, top + kClipCardPaddingY,
+                     quoteLine, textWidth, true);
     return;
   }
 
@@ -424,15 +430,14 @@ void drawClips(const GfxRenderer& renderer, const Context& ctx) {
   renderer.drawText(NOTOSANS_16_FONT_ID, cardX + kClipCardPaddingX, top + kClipGlyphTop, "\xe2\x80\x9c", true,
                     EpdFontFamily::BOLD);
 
-  drawWrappedLines(renderer, NOTOSANS_14_FONT_ID, ctx.clipQuote, lines, lineCount, cardX + kClipCardPaddingX,
+  drawWrappedLines(renderer, quoteFont, ctx.clipQuote, lines, lineCount, cardX + kClipCardPaddingX,
                    top + kClipCardPaddingY + glyphLine + kClipGlyphGap, quoteLine, textWidth, false);
 
   const int attributionTop = top + cardHeight + kClipAttributionGap;
   char fitted[kLineScratchSize];
   fitTextToWidth(renderer, NOTOSANS_12_FONT_ID, ctx.bookTitle, cardWidth - 8, fitted, sizeof(fitted));
   int textW = renderer.getTextWidth(NOTOSANS_12_FONT_ID, fitted, EpdFontFamily::BOLD);
-  renderer.drawText(NOTOSANS_12_FONT_ID, cardX + cardWidth - textW, attributionTop, fitted, true,
-                    EpdFontFamily::BOLD);
+  renderer.drawText(NOTOSANS_12_FONT_ID, cardX + cardWidth - textW, attributionTop, fitted, true, EpdFontFamily::BOLD);
   fitTextToWidth(renderer, NOTOSANS_12_FONT_ID, ctx.bookAuthor, cardWidth - 8, fitted, sizeof(fitted));
   textW = renderer.getTextWidth(NOTOSANS_12_FONT_ID, fitted);
   renderer.drawText(NOTOSANS_12_FONT_ID, cardX + cardWidth - textW,
@@ -602,7 +607,8 @@ void drawCalendar(const GfxRenderer& renderer, const Context& ctx) {
 
   const int titleLine = renderer.getLineHeight(NOTOSANS_18_FONT_ID);
   const int weekdayLine = renderer.getLineHeight(NOTOSANS_12_FONT_ID);
-  const int dayLine = renderer.getLineHeight(NOTOSANS_14_FONT_ID);
+  const int dayFont = widgetBodyFont(NOTOSANS_14_FONT_ID, NOTOSANS_12_FONT_ID);
+  const int dayLine = renderer.getLineHeight(dayFont);
   // Line height plus a small gap keeps the grid compact instead of stretching
   // the cells over the remaining panel height.
   const int cellH = dayLine + 12;
@@ -619,8 +625,10 @@ void drawCalendar(const GfxRenderer& renderer, const Context& ctx) {
   renderer.drawCenteredText(NOTOSANS_18_FONT_ID, top, title, true, EpdFontFamily::BOLD);
 
   const int weekdayY = top + weekdayOffset;
+  // WEEKDAY_LABELS is Monday-first; shift by six for a Sunday-first week.
+  const uint8_t labelShift = ctx.calendarSundayFirst ? 6 : 0;
   for (uint8_t col = 0; col < 7; ++col) {
-    const char* label = I18n::getInstance().get(WEEKDAY_LABELS[col]);
+    const char* label = I18n::getInstance().get(WEEKDAY_LABELS[(col + labelShift) % 7]);
     const int x = kWidgetMargin + col * cellW + (cellW - renderer.getTextWidth(NOTOSANS_12_FONT_ID, label)) / 2;
     renderer.drawText(NOTOSANS_12_FONT_ID, x, weekdayY, label, true);
   }
@@ -638,19 +646,21 @@ void drawCalendar(const GfxRenderer& renderer, const Context& ctx) {
     if (today) renderer.fillRect(cellX + 2, cellY + 2, cellW - 4, cellH - 4, true);
 
     snprintf(dayText, sizeof(dayText), "%u", static_cast<unsigned>(day));
-    const int textX = cellX + (cellW - renderer.getTextWidth(NOTOSANS_14_FONT_ID, dayText)) / 2;
+    const int textX = cellX + (cellW - renderer.getTextWidth(dayFont, dayText)) / 2;
     const int textY = cellY + (cellH - dayLine) / 2;
-    renderer.drawText(NOTOSANS_14_FONT_ID, textX, textY, dayText, !today);
+    renderer.drawText(dayFont, textX, textY, dayText, !today);
   }
 }
 
 void drawTodo(const GfxRenderer& renderer, const Context& ctx) {
   if (ctx.todoCount == 0) return;
 
-  const int lineHeight = renderer.getLineHeight(NOTOSANS_16_FONT_ID);
+  const int rowFont = widgetBodyFont(NOTOSANS_16_FONT_ID, NOTOSANS_14_FONT_ID);
+  const int headingLine = renderer.getLineHeight(NOTOSANS_16_FONT_ID);
+  const int lineHeight = renderer.getLineHeight(rowFont);
   const int rowPitch = lineHeight + kTodoRowGap;
   const int overflowLine = ctx.todoOverflow > 0 ? renderer.getLineHeight(NOTOSANS_14_FONT_ID) : 0;
-  const int contentH = lineHeight + kTodoHeadingGap + ctx.todoCount * rowPitch + overflowLine;
+  const int contentH = headingLine + kTodoHeadingGap + ctx.todoCount * rowPitch + overflowLine;
   const int top = centeredTop(ctx.pageHeight, contentH);
 
   renderer.drawCenteredText(NOTOSANS_16_FONT_ID, top, tr(STR_TODO_LIST), true, EpdFontFamily::BOLD);
@@ -660,12 +670,12 @@ void drawTodo(const GfxRenderer& renderer, const Context& ctx) {
   const int textX = kWidgetMargin + kBoxSize + kBoxGap;
   const int maxTextWidth = ctx.pageWidth - kWidgetMargin - textX;
 
-  int rowY = top + lineHeight + kTodoHeadingGap;
+  int rowY = top + headingLine + kTodoHeadingGap;
   for (uint8_t i = 0; i < ctx.todoCount; ++i) {
     const int boxY = rowY + (lineHeight - kBoxSize) / 2;
     renderer.drawRect(kWidgetMargin, boxY, kBoxSize, kBoxSize, 2, true);
     if (ctx.todoDone[i]) {
-      // An X reads as finished at this size; a strike-through would not.
+      // The checkbox keeps its X; the row text is also struck through below.
       constexpr int kInset = 4;
       const int x0 = kWidgetMargin + kInset;
       const int x1 = kWidgetMargin + kBoxSize - kInset - 1;
@@ -676,8 +686,13 @@ void drawTodo(const GfxRenderer& renderer, const Context& ctx) {
     }
 
     char line[sizeof(ctx.todoText[0])];
-    fitTextToWidth(renderer, NOTOSANS_16_FONT_ID, ctx.todoText[i], maxTextWidth, line, sizeof(line));
-    renderer.drawText(NOTOSANS_16_FONT_ID, textX, rowY, line, true);
+    fitTextToWidth(renderer, rowFont, ctx.todoText[i], maxTextWidth, line, sizeof(line));
+    renderer.drawText(rowFont, textX, rowY, line, true);
+    if (ctx.todoDone[i]) {
+      // Strike the finished text through its middle so "done" reads at a glance.
+      const int strikeWidth = renderer.getTextWidth(rowFont, line);
+      renderer.fillRect(textX, rowY + lineHeight / 2, strikeWidth, 2, true);
+    }
     rowY += rowPitch;
   }
 
@@ -716,8 +731,10 @@ void capture(Context& ctx, const int pageWidth, const int pageHeight) {
     ctx.year = static_cast<uint16_t>(local.tm_year + 1900);
     ctx.month = static_cast<uint8_t>(local.tm_mon + 1);
     ctx.day = static_cast<uint8_t>(local.tm_mday);
-    // tm_wday is 0 = Sunday; the grid is Monday-first.
-    ctx.todayColumn = static_cast<uint8_t>((local.tm_wday + 6) % 7);
+    // tm_wday is 0 = Sunday. The grid is Monday-first unless the user opted
+    // into a Sunday-first week in Home > Widgets.
+    ctx.calendarSundayFirst = SETTINGS.widgetCalendarSundayFirst != 0;
+    ctx.todayColumn = static_cast<uint8_t>(ctx.calendarSundayFirst ? local.tm_wday : (local.tm_wday + 6) % 7);
     ctx.daysInMonth = daysInMonth(ctx.year, ctx.month);
     ctx.firstColumn = static_cast<uint8_t>((ctx.todayColumn + 7 - ((ctx.day - 1) % 7)) % 7);
     ctx.dateValid = true;
@@ -731,10 +748,15 @@ void capture(Context& ctx, const int pageWidth, const int pageHeight) {
   TODO_STORE.loadFromFile();
   ctx.todoCount = 0;
   ctx.todoOverflow = 0;
-  const uint8_t cap = todoRowCap(pageHeight);
-  // Keep done items: a finished task stays on the sleep screen as a record of
-  // the day until the user deletes it in Settings. Stored order is preserved.
+  uint8_t cap = todoRowCap(pageHeight);
+  // A corrupt/absent value falls back to one row rather than a blank widget.
+  const uint8_t wantedRows = SETTINGS.widgetTodoRows < 1 ? 1 : SETTINGS.widgetTodoRows;
+  if (wantedRows < cap) cap = wantedRows;
+  // Done items stay on the screen as a record of the day unless the user turns
+  // that off in Home > Widgets. Stored order is preserved.
+  const bool showCompleted = SETTINGS.widgetShowCompleted != 0;
   for (const auto& item : TODO_STORE.getItems()) {
+    if (!showCompleted && item.done) continue;
     if (ctx.todoCount < cap) {
       snprintf(ctx.todoText[ctx.todoCount], sizeof(ctx.todoText[ctx.todoCount]), "%s", item.text.c_str());
       ctx.todoDone[ctx.todoCount] = item.done;
@@ -767,8 +789,12 @@ void draw(const GfxRenderer& renderer, const CrossPointSettings::SLEEP_WIDGET ki
     case CrossPointSettings::SLEEP_WIDGET_TODO:
       drawTodo(renderer, ctx);
       return;
-    case CrossPointSettings::SLEEP_WIDGET_NOW_READING: drawNowReading(renderer, ctx); return;
-    case CrossPointSettings::SLEEP_WIDGET_CLIPS: drawClips(renderer, ctx); return;
+    case CrossPointSettings::SLEEP_WIDGET_NOW_READING:
+      drawNowReading(renderer, ctx);
+      return;
+    case CrossPointSettings::SLEEP_WIDGET_CLIPS:
+      drawClips(renderer, ctx);
+      return;
     case CrossPointSettings::SLEEP_WIDGET_NONE:
     case CrossPointSettings::SLEEP_WIDGET_COUNT:
       return;
