@@ -28,6 +28,8 @@ void forEachBaseSetting(SettingVisitor visit, void* context) {
     values[CrossPointSettings::SLEEP_WIDGET_NONE] = StrId::STR_WIDGET_NONE;
     values[CrossPointSettings::SLEEP_WIDGET_CALENDAR] = StrId::STR_WIDGET_CALENDAR;
     values[CrossPointSettings::SLEEP_WIDGET_TODO] = StrId::STR_WIDGET_TODO;
+    values[CrossPointSettings::SLEEP_WIDGET_NOW_READING] = StrId::STR_WIDGET_NOW_READING;
+    values[CrossPointSettings::SLEEP_WIDGET_CLIPS] = StrId::STR_WIDGET_CLIPS;
     return values;
   }();
   static constexpr auto STATUS_BAR_CLOCK_VALUES = [] {

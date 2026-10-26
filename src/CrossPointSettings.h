@@ -248,6 +248,8 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
     SLEEP_WIDGET_NONE = 0,
     SLEEP_WIDGET_CALENDAR = 1,
     SLEEP_WIDGET_TODO = 2,
+    SLEEP_WIDGET_NOW_READING = 3,
+    SLEEP_WIDGET_CLIPS = 4,
     SLEEP_WIDGET_COUNT
   };
   uint8_t sleepScreenWidget = SLEEP_WIDGET_NONE;

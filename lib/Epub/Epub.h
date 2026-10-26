@@ -72,8 +72,12 @@ class Epub {
   const std::string& getTitle() const;
   const std::string& getAuthor() const;
   const std::string& getLanguage() const;
-  std::string getCoverBmpPath(bool cropped = false, bool originalThresholds = false) const;
-  bool generateCoverBmp(bool cropped = false, bool originalThresholds = false) const;
+  std::string getCoverBmpPath(bool cropped = false, bool absoluteThresholds = false) const;
+  bool generateCoverBmp(bool cropped = false, bool absoluteThresholds = false) const;
+  // Widget-sized 1-bit cover for the sleep-screen Now Reading widget. Pre-scaled to fill the
+  // given box, so the caller draws it without resampling.
+  std::string getWidgetCoverBmpPath(int boxWidth, int boxHeight) const;
+  bool generateWidgetCoverBmp(int boxWidth, int boxHeight) const;
   std::string getThumbBmpPath() const;
   std::string getThumbBmpPath(int height) const;
   bool generateThumbBmp(int height) const;

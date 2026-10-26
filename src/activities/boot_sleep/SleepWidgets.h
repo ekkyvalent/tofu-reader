@@ -28,6 +28,19 @@ struct Context {
   uint8_t todoOverflow = 0;  // items beyond the panel-fit cap that did not fit
   bool todoDone[kMaxWidgetItems] = {};
   char todoText[kMaxWidgetItems][41] = {};
+
+  // Now Reading / Clips snapshot. Both widgets resolve the same book, so the
+  // title and author are shared. capture() copies them out of the book and
+  // reads one clipping; draw() only paints these fixed buffers.
+  static constexpr uint8_t kBookTitleSize = 72;
+  static constexpr uint8_t kBookAuthorSize = 64;
+  static constexpr uint16_t kClipQuoteSize = 256;  // 255 bytes plus terminator
+  bool bookResolved = false;                      // a book path was found
+  bool clipValid = false;                         // an eligible quote was captured
+  int8_t bookPercent = -1;                        // 0..100, or -1 when unknown
+  char bookTitle[kBookTitleSize] = {};
+  char bookAuthor[kBookAuthorSize] = {};
+  char clipQuote[kClipQuoteSize] = {};
 };
 
 void capture(Context& ctx, int pageWidth, int pageHeight);

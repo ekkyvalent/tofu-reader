@@ -4,17 +4,29 @@
 #include "SleepWidgets.h"
 
 #include <BatteryMonitor.h>
+#include <Bitmap.h>
+#include <Epub.h>
+#include <FsHelpers.h>
 #include <GfxRenderer.h>
 #include <HalClock.h>
+#include <HalStorage.h>
 #include <I18n.h>
 #include <Logging.h>
+#include <Memory.h>
+#include <Xtc.h>
 
+#include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <ctime>
+#include <memory>
 
+#include "ClippingStore.h"
+#include "CrossPointState.h"
+#include "RecentBooksStore.h"
 #include "TodoStore.h"
 #include "fontIds.h"
+#include "util/BookProgress.h"
 
 namespace sleep_widgets {
 namespace {
@@ -117,6 +129,466 @@ void fitTextToWidth(const GfxRenderer& renderer, const int fontId, const char* t
     out[next + 3] = '\0';
     body = next;
   }
+}
+
+// ---- Now Reading and Clips ------------------------------------------------
+
+// 2:3 box: big enough to read as the focal element, small enough that the whole
+// block (label, cover, title, author, bar, percent) still fits 720 usable px.
+constexpr int kWidgetCoverBoxWidth = 280;
+constexpr int kWidgetCoverBoxHeight = 420;
+constexpr int kProgressBarHeight = 10;
+constexpr int kProgressBarInset = 2;
+constexpr int kGapAfterLabel = 18;
+constexpr int kGapAfterCover = 18;
+constexpr int kGapTitleAuthor = 6;
+constexpr int kGapBeforeBar = 26;
+constexpr int kGapBeforePercent = 10;
+
+constexpr int kClipCardPaddingX = 24;
+constexpr int kClipCardPaddingY = 26;
+constexpr int kClipGlyphTop = 20;
+constexpr int kClipGlyphGap = 8;
+constexpr int kClipAttributionGap = 18;
+constexpr uint8_t kQuoteMaxLines = 10;
+constexpr uint8_t kEmptyTextMaxLines = 3;
+constexpr size_t kLineScratchSize = 128;
+
+// One wrapped line as an offset/length slice of a captured text buffer.
+struct LineSlice {
+  uint16_t offset = 0;
+  uint16_t length = 0;
+};
+
+// The cover Bitmap has no default constructor and must survive from capture()
+// into the paint, so it and its open file live here for the whole sleep entry.
+HalFile gCoverFile;
+std::unique_ptr<Bitmap> gCoverBitmap;
+
+void releaseCover() {
+  gCoverBitmap.reset();
+  if (gCoverFile) gCoverFile.close();
+}
+
+void openCoverBitmap(const char* path) {
+  if (path == nullptr || path[0] == '\0') return;
+  if (!Storage.openFileForRead("SLP", path, gCoverFile)) return;
+  auto bitmap = makeUniqueNoThrow<Bitmap>(gCoverFile);
+  if (bitmap && bitmap->parseHeaders() == BmpReaderError::Ok) {
+    gCoverBitmap = std::move(bitmap);
+  } else {
+    gCoverFile.close();
+  }
+}
+
+// Copies at most outSize-1 bytes of text into out, collapsing every run of
+// whitespace to one space and cutting on a UTF-8 codepoint boundary.
+void copyCollapsed(char* out, const size_t outSize, const char* text, const size_t textLength) {
+  if (outSize == 0) return;
+  size_t written = 0;
+  bool pendingSpace = false;
+  for (size_t i = 0; i < textLength; ++i) {
+    const auto c = static_cast<unsigned char>(text[i]);
+    const bool whitespace = c == ' ' || c == '\n' || c == '\r' || c == '\t';
+    if (whitespace) {
+      if (written > 0) pendingSpace = true;
+      continue;
+    }
+    if (pendingSpace) {
+      if (written + 1 >= outSize) break;
+      out[written++] = ' ';
+      pendingSpace = false;
+    }
+    if (written + 1 >= outSize) break;
+    out[written++] = static_cast<char>(c);
+  }
+
+  // Drop a trailing partial codepoint left by the length cap.
+  size_t start = written;
+  while (start > 0 && (static_cast<unsigned char>(out[start - 1]) & 0xC0) == 0x80) --start;
+  if (start > 0) {
+    const auto lead = static_cast<unsigned char>(out[start - 1]);
+    size_t expected = 1;
+    if ((lead & 0xE0) == 0xC0) expected = 2;
+    else if ((lead & 0xF0) == 0xE0) expected = 3;
+    else if ((lead & 0xF8) == 0xF0) expected = 4;
+    if (written - (start - 1) < expected) written = start - 1;
+  }
+  while (written > 0 && out[written - 1] == ' ') --written;
+  out[written] = '\0';
+}
+
+// Display-only cleanup: repeated metadata values are joined with separators
+// (ContentOpfParser joins dc:creator with ", "), leaving junk such as
+// "Cal Newport;". Strips trailing whitespace and separator runes in place.
+void trimTrailingSeparators(char* text) {
+  size_t length = strlen(text);
+  while (length > 0) {
+    const char c = text[length - 1];
+    if (c != ' ' && c != ';' && c != ',' && c != ':' && c != '|' && c != '/') break;
+    --length;
+  }
+  text[length] = '\0';
+}
+
+// Greedy word wrap into caller-provided slices. Candidate lines are measured
+// in scratch with getTextWidth, so this allocates nothing and stops at the
+// caller's line cap.
+uint8_t wrapLines(const GfxRenderer& renderer, const int fontId, const char* text, const int maxWidth,
+                  LineSlice* lines, const uint8_t maxLines, char* scratch, const size_t scratchSize) {
+  if (text == nullptr || lines == nullptr || scratch == nullptr || scratchSize < 2 || maxLines == 0) return 0;
+  const size_t length = strlen(text);
+  size_t pos = 0;
+  uint8_t count = 0;
+  while (pos < length && count < maxLines) {
+    while (pos < length && text[pos] == ' ') ++pos;
+    if (pos >= length) break;
+
+    size_t lineEnd = pos;
+    size_t cursor = pos;
+    bool anyWord = false;
+    while (cursor < length) {
+      size_t wordEnd = cursor;
+      while (wordEnd < length && text[wordEnd] != ' ') ++wordEnd;
+      const size_t candidateLength = wordEnd - pos;
+      const size_t copyLength = candidateLength < scratchSize - 1 ? candidateLength : scratchSize - 1;
+      memcpy(scratch, text + pos, copyLength);
+      scratch[copyLength] = '\0';
+      if (candidateLength >= scratchSize || renderer.getTextWidth(fontId, scratch) > maxWidth) break;
+      lineEnd = wordEnd;
+      anyWord = true;
+      cursor = wordEnd;
+      while (cursor < length && text[cursor] == ' ') ++cursor;
+    }
+    if (!anyWord) {
+      // The first word alone is wider than the line: emit it and let
+      // fitTextToWidth ellipsize it at paint time.
+      while (lineEnd < length && text[lineEnd] != ' ') ++lineEnd;
+    }
+    size_t sliceEnd = lineEnd;
+    while (sliceEnd > pos && text[sliceEnd - 1] == ' ') --sliceEnd;
+    lines[count].offset = static_cast<uint16_t>(pos);
+    lines[count].length = static_cast<uint16_t>(sliceEnd - pos);
+    ++count;
+    pos = lineEnd;
+  }
+  return count;
+}
+
+// Paints wrapped slices. Each line is copied into a scratch buffer and run
+// through fitTextToWidth, so an over-long line ends in an ellipsis instead of
+// being clipped by the panel.
+void drawWrappedLines(const GfxRenderer& renderer, const int fontId, const char* text, const LineSlice* lines,
+                      const uint8_t lineCount, const int x, const int y, const int lineHeight,
+                      const int maxWidth, const bool centered) {
+  char raw[kLineScratchSize];
+  char fitted[kLineScratchSize];
+  int lineY = y;
+  for (uint8_t i = 0; i < lineCount; ++i) {
+    size_t length = lines[i].length;
+    if (length >= sizeof(raw)) length = sizeof(raw) - 1;
+    memcpy(raw, text + lines[i].offset, length);
+    raw[length] = '\0';
+    fitTextToWidth(renderer, fontId, raw, maxWidth, fitted, sizeof(fitted));
+    int textX = x;
+    if (centered) {
+      const int width = renderer.getTextWidth(fontId, fitted);
+      textX = x + (maxWidth - width) / 2;
+    }
+    renderer.drawText(fontId, textX, lineY, fitted, true);
+    lineY += lineHeight;
+  }
+}
+
+void drawNowReading(const GfxRenderer& renderer, const Context& ctx) {
+  const int labelLine = renderer.getLineHeight(NOTOSANS_12_FONT_ID);
+  const int titleLine = renderer.getLineHeight(NOTOSANS_14_FONT_ID);
+  const int authorLine = renderer.getLineHeight(NOTOSANS_12_FONT_ID);
+  const int percentLine = renderer.getLineHeight(NOTOSANS_12_FONT_ID);
+  const int blockWidth = ctx.pageWidth - 2 * kWidgetMargin;
+
+  if (!ctx.bookResolved) {
+    const char* empty = tr(STR_WIDGET_NOW_READING_EMPTY);
+    LineSlice lines[kEmptyTextMaxLines];
+    char scratch[kLineScratchSize];
+    const uint8_t lineCount =
+        wrapLines(renderer, NOTOSANS_14_FONT_ID, empty, blockWidth, lines, kEmptyTextMaxLines, scratch,
+                  sizeof(scratch));
+    const int textLine = renderer.getLineHeight(NOTOSANS_14_FONT_ID);
+    const int contentH = labelLine + kGapAfterLabel + lineCount * textLine;
+    const int top = centeredTop(ctx.pageHeight, contentH);
+    renderer.drawCenteredText(NOTOSANS_12_FONT_ID, top, tr(STR_WIDGET_NOW_READING));
+    drawWrappedLines(renderer, NOTOSANS_14_FONT_ID, empty, lines, lineCount, kWidgetMargin,
+                     top + labelLine + kGapAfterLabel, textLine, blockWidth, true);
+    releaseCover();
+    return;
+  }
+
+  int contentH = labelLine + kGapAfterLabel + titleLine + kGapTitleAuthor + authorLine;
+  if (gCoverBitmap) contentH += kWidgetCoverBoxHeight + kGapAfterCover;
+  if (ctx.bookPercent >= 0) contentH += kGapBeforeBar + kProgressBarHeight + kGapBeforePercent + percentLine;
+  const int top = centeredTop(ctx.pageHeight, contentH);
+
+  renderer.drawCenteredText(NOTOSANS_12_FONT_ID, top, tr(STR_WIDGET_NOW_READING));
+  int y = top + labelLine + kGapAfterLabel;
+
+  if (gCoverBitmap) {
+    const int boxX = (ctx.pageWidth - kWidgetCoverBoxWidth) / 2;
+    // A widget-sized bitmap matches the box and paints 1:1. A fallback
+    // screen-sized bitmap is shrunk to fit, so centre its shorter height inside
+    // the reserved box instead of cropping it.
+    const int bitmapWidth = gCoverBitmap->getWidth();
+    const int bitmapHeight = gCoverBitmap->getHeight();
+    int drawnHeight = kWidgetCoverBoxHeight;
+    if (bitmapWidth > 0) {
+      const int scaledHeight = bitmapHeight * kWidgetCoverBoxWidth / bitmapWidth;
+      if (scaledHeight < drawnHeight) drawnHeight = scaledHeight;
+    }
+    int drawnWidth = kWidgetCoverBoxWidth;
+    if (bitmapHeight > 0) {
+      const int scaledWidth = bitmapWidth * kWidgetCoverBoxHeight / bitmapHeight;
+      if (scaledWidth < drawnWidth) drawnWidth = scaledWidth;
+    }
+    // The only IO in the draw path: reading the already-open cover Bitmap
+    // while painting. It is the same cost the cover sleep screen already pays
+    // in this same activity at the same refresh.
+    // drawBitmap anchors at x and never centres, so the drawn origin is computed here.
+    const int drawnLeft = boxX + (kWidgetCoverBoxWidth - drawnWidth) / 2;
+    const int drawnTop = y + (kWidgetCoverBoxHeight - drawnHeight) / 2;
+    renderer.drawBitmap(*gCoverBitmap, drawnLeft, drawnTop, kWidgetCoverBoxWidth, kWidgetCoverBoxHeight, 0, 0, false);
+    constexpr int kCoverFrameGap = 6;    // matches COVER_CELL_INSET in the home grid
+    constexpr int kCoverFrameWidth = 2;  // matches the Clips card border in this widget set
+    renderer.drawRect(drawnLeft - kCoverFrameGap, drawnTop - kCoverFrameGap, drawnWidth + 2 * kCoverFrameGap,
+                      drawnHeight + 2 * kCoverFrameGap, kCoverFrameWidth, true);
+    y += kWidgetCoverBoxHeight + kGapAfterCover;
+  }
+
+  char fitted[kLineScratchSize];
+  fitTextToWidth(renderer, NOTOSANS_14_FONT_ID, ctx.bookTitle, blockWidth, fitted, sizeof(fitted));
+  renderer.drawCenteredText(NOTOSANS_14_FONT_ID, y, fitted, true, EpdFontFamily::BOLD);
+  y += titleLine + kGapTitleAuthor;
+
+  fitTextToWidth(renderer, NOTOSANS_12_FONT_ID, ctx.bookAuthor, blockWidth, fitted, sizeof(fitted));
+  renderer.drawCenteredText(NOTOSANS_12_FONT_ID, y, fitted);
+  y += authorLine;
+
+  if (ctx.bookPercent >= 0) {
+    y += kGapBeforeBar;
+    const int barX = kWidgetMargin;
+    const int barWidth = ctx.pageWidth - 2 * kWidgetMargin;
+    renderer.drawRect(barX, y, barWidth, kProgressBarHeight, 2, true);
+    const int filled = ctx.bookPercent * (barWidth - 2 * kProgressBarInset) / 100;
+    if (filled > 0) {
+      renderer.fillRect(barX + kProgressBarInset, y + kProgressBarInset, filled,
+                        kProgressBarHeight - 2 * kProgressBarInset, true);
+    }
+    y += kProgressBarHeight + kGapBeforePercent;
+    char percentText[8];
+    snprintf(percentText, sizeof(percentText), "%u%%", static_cast<unsigned>(ctx.bookPercent));
+    renderer.drawCenteredText(NOTOSANS_12_FONT_ID, y, percentText);
+  }
+
+  releaseCover();
+}
+
+void drawClips(const GfxRenderer& renderer, const Context& ctx) {
+  const int cardX = kWidgetMargin;
+  const int cardWidth = ctx.pageWidth - 2 * kWidgetMargin;
+  const int textWidth = cardWidth - 2 * kClipCardPaddingX;
+  const int quoteLine = renderer.getLineHeight(NOTOSANS_14_FONT_ID);
+
+  LineSlice lines[kQuoteMaxLines];
+  char scratch[kLineScratchSize];
+  uint8_t lineCount = 0;
+  if (ctx.clipValid) {
+    lineCount = wrapLines(renderer, NOTOSANS_14_FONT_ID, ctx.clipQuote, textWidth, lines, kQuoteMaxLines, scratch,
+                          sizeof(scratch));
+  }
+
+  if (!ctx.clipValid || lineCount == 0) {
+    const char* empty = tr(STR_WIDGET_CLIPS_EMPTY);
+    lineCount =
+        wrapLines(renderer, NOTOSANS_14_FONT_ID, empty, textWidth, lines, kEmptyTextMaxLines, scratch, sizeof(scratch));
+    const int cardHeight = 2 * kClipCardPaddingY + 3 * quoteLine;
+    const int top = centeredTop(ctx.pageHeight, cardHeight);
+    renderer.drawRect(cardX, top, cardWidth, cardHeight, 2, true);
+    drawWrappedLines(renderer, NOTOSANS_14_FONT_ID, empty, lines, lineCount, cardX + kClipCardPaddingX,
+                     top + kClipCardPaddingY, quoteLine, textWidth, true);
+    return;
+  }
+
+  const int glyphLine = renderer.getLineHeight(NOTOSANS_16_FONT_ID);
+  const int cardHeight = 2 * kClipCardPaddingY + glyphLine + kClipGlyphGap + lineCount * quoteLine;
+  const int top = centeredTop(ctx.pageHeight, cardHeight);
+  renderer.drawRect(cardX, top, cardWidth, cardHeight, 2, true);
+  renderer.drawText(NOTOSANS_16_FONT_ID, cardX + kClipCardPaddingX, top + kClipGlyphTop, "\xe2\x80\x9c", true,
+                    EpdFontFamily::BOLD);
+
+  drawWrappedLines(renderer, NOTOSANS_14_FONT_ID, ctx.clipQuote, lines, lineCount, cardX + kClipCardPaddingX,
+                   top + kClipCardPaddingY + glyphLine + kClipGlyphGap, quoteLine, textWidth, false);
+
+  const int attributionTop = top + cardHeight + kClipAttributionGap;
+  char fitted[kLineScratchSize];
+  fitTextToWidth(renderer, NOTOSANS_12_FONT_ID, ctx.bookTitle, cardWidth - 8, fitted, sizeof(fitted));
+  int textW = renderer.getTextWidth(NOTOSANS_12_FONT_ID, fitted, EpdFontFamily::BOLD);
+  renderer.drawText(NOTOSANS_12_FONT_ID, cardX + cardWidth - textW, attributionTop, fitted, true,
+                    EpdFontFamily::BOLD);
+  fitTextToWidth(renderer, NOTOSANS_12_FONT_ID, ctx.bookAuthor, cardWidth - 8, fitted, sizeof(fitted));
+  textW = renderer.getTextWidth(NOTOSANS_12_FONT_ID, fitted);
+  renderer.drawText(NOTOSANS_12_FONT_ID, cardX + cardWidth - textW,
+                    attributionTop + renderer.getLineHeight(NOTOSANS_12_FONT_ID), fitted);
+}
+
+// ---- captured book-backed data --------------------------------------------
+
+const char* resolveBookPath() {
+  if (!APP_STATE.openEpubPath.empty()) return APP_STATE.openEpubPath.c_str();
+  const auto& books = RECENT_BOOKS.getBooks();
+  if (books.empty() || books.front().path.empty()) return nullptr;
+  return books.front().path.c_str();
+}
+
+void captureBookText(const char* path, Context& ctx) {
+  // The recent-books index already holds the title and author, so a matching
+  // entry avoids opening the book at all.
+  for (const auto& book : RECENT_BOOKS.getBooks()) {
+    if (book.path != path) continue;
+    copyCollapsed(ctx.bookTitle, sizeof(ctx.bookTitle), book.title.c_str(), book.title.size());
+    copyCollapsed(ctx.bookAuthor, sizeof(ctx.bookAuthor), book.author.c_str(), book.author.size());
+    if (ctx.bookTitle[0] != '\0') return;
+  }
+
+  if (FsHelpers::hasXtcExtension(path)) {
+    Xtc book(path, "/.crosspoint");
+    if (!book.load()) return;
+    auto title = book.getTitle();
+    auto author = book.getAuthor();
+    copyCollapsed(ctx.bookTitle, sizeof(ctx.bookTitle), title.c_str(), title.size());
+    copyCollapsed(ctx.bookAuthor, sizeof(ctx.bookAuthor), author.c_str(), author.size());
+  } else if (FsHelpers::hasReflowableBookExtension(path)) {
+    Epub book(path, "/.crosspoint");
+    if (!book.load(true, true)) return;
+    const auto& title = book.getTitle();
+    const auto& author = book.getAuthor();
+    copyCollapsed(ctx.bookTitle, sizeof(ctx.bookTitle), title.c_str(), title.size());
+    copyCollapsed(ctx.bookAuthor, sizeof(ctx.bookAuthor), author.c_str(), author.size());
+  }
+}
+
+void captureNowReading(const char* path, Context& ctx) {
+  if (path == nullptr) return;
+  ctx.bookResolved = true;
+
+  if (FsHelpers::hasXtcExtension(path)) {
+    Xtc book(path, "/.crosspoint");
+    if (book.load()) {
+      auto title = book.getTitle();
+      auto author = book.getAuthor();
+      copyCollapsed(ctx.bookTitle, sizeof(ctx.bookTitle), title.c_str(), title.size());
+      copyCollapsed(ctx.bookAuthor, sizeof(ctx.bookAuthor), author.c_str(), author.size());
+      if (book.generateCoverBmp()) openCoverBitmap(book.getCoverBmpPath().c_str());
+    }
+  } else if (FsHelpers::hasReflowableBookExtension(path)) {
+    Epub book(path, "/.crosspoint");
+    if (book.load(true, true)) {
+      const auto& title = book.getTitle();
+      const auto& author = book.getAuthor();
+      copyCollapsed(ctx.bookTitle, sizeof(ctx.bookTitle), title.c_str(), title.size());
+      copyCollapsed(ctx.bookAuthor, sizeof(ctx.bookAuthor), author.c_str(), author.size());
+      if (book.generateWidgetCoverBmp(kWidgetCoverBoxWidth, kWidgetCoverBoxHeight)) {
+        openCoverBitmap(book.getWidgetCoverBmpPath(kWidgetCoverBoxWidth, kWidgetCoverBoxHeight).c_str());
+      } else if (book.generateCoverBmp()) {
+        openCoverBitmap(book.getCoverBmpPath().c_str());
+      }
+    }
+  }
+
+  if (ctx.bookTitle[0] == '\0') {
+    // A load failure must still leave readable text; the file name is a
+    // reasonable last resort and costs no allocation.
+    const char* name = strrchr(path, '/');
+    name = name != nullptr ? name + 1 : path;
+    const char* dot = strrchr(name, '.');
+    const size_t nameLength = dot != nullptr && dot > name ? static_cast<size_t>(dot - name) : strlen(name);
+    copyCollapsed(ctx.bookTitle, sizeof(ctx.bookTitle), name, nameLength);
+  }
+
+  const int progress = loadBookProgress(path);
+  if (progress >= 0 && progress <= 100) ctx.bookPercent = static_cast<int8_t>(progress);
+}
+
+bool isEligibleClipping(const Clipping* clipping) {
+  if (clipping == nullptr) return false;
+  return clipping->wordCount >= 6 && clipping->textLength >= 80 && clipping->textLength <= 300;
+}
+
+uint32_t fnv1a(const char* text) {
+  uint32_t hash = 2166136261u;
+  while (text != nullptr && *text != '\0') {
+    hash ^= static_cast<uint8_t>(*text++);
+    hash *= 16777619u;
+  }
+  return hash;
+}
+
+uint32_t avalanche(uint32_t value) {
+  value ^= value >> 16;
+  value *= 0x7feb352du;
+  value ^= value >> 15;
+  value *= 0x846ca68bu;
+  value ^= value >> 16;
+  return value;
+}
+
+void captureClips(Context& ctx) {
+  const char* path = resolveBookPath();
+  if (path == nullptr) return;
+  ctx.bookResolved = true;
+
+  captureBookText(path, ctx);
+
+  if (!CLIPPINGS.loadForBook(path, ctx.bookTitle, ctx.bookAuthor, "epub")) {
+    CLIPPINGS.unload();
+    return;
+  }
+
+  const size_t count = CLIPPINGS.clippingCount();
+  size_t eligible = 0;
+  for (size_t i = 0; i < count; ++i) {
+    if (isEligibleClipping(CLIPPINGS.clippingAt(i))) ++eligible;
+  }
+  if (eligible == 0) {
+    CLIPPINGS.unload();
+    return;
+  }
+
+  uint32_t day = 0;
+  struct tm local = {};
+  if (halClock.isAvailable() && halClock.localTime(local)) {
+    local.tm_isdst = -1;
+    const time_t seconds = mktime(&local);
+    if (seconds > 0) day = static_cast<uint32_t>(seconds) / 86400u;
+  }
+
+  size_t want = avalanche(fnv1a(path) ^ day) % eligible;
+  size_t chosen = count;
+  for (size_t i = 0; i < count; ++i) {
+    if (!isEligibleClipping(CLIPPINGS.clippingAt(i))) continue;
+    if (want == 0) {
+      chosen = i;
+      break;
+    }
+    --want;
+  }
+
+  if (chosen < count) {
+    std::string text;
+    if (CLIPPINGS.readClippingText(chosen, text)) {
+      copyCollapsed(ctx.clipQuote, sizeof(ctx.clipQuote), text.c_str(), text.size());
+      ctx.clipValid = ctx.clipQuote[0] != '\0';
+    }
+  }
+  CLIPPINGS.unload();
 }
 
 void drawCalendar(const GfxRenderer& renderer, const Context& ctx) {
@@ -235,6 +707,9 @@ uint8_t todoRowCap(const int pageHeight) {
 void capture(Context& ctx, const int pageWidth, const int pageHeight) {
   ctx.pageWidth = pageWidth;
   ctx.pageHeight = pageHeight;
+  // A previous sleep entry must not leave a cover file open for the whole
+  // awake period.
+  releaseCover();
 
   struct tm local = {};
   if (halClock.isAvailable() && halClock.localTime(local) && local.tm_year + 1900 >= 2024) {
@@ -268,6 +743,20 @@ void capture(Context& ctx, const int pageWidth, const int pageHeight) {
       ++ctx.todoOverflow;
     }
   }
+
+  // These widgets open the current book and can decode a cover; skip that IO
+  // when the selected widget does not paint it.
+  const auto kind = static_cast<CrossPointSettings::SLEEP_WIDGET>(SETTINGS.sleepScreenWidget);
+  if (kind == CrossPointSettings::SLEEP_WIDGET_NOW_READING) {
+    captureNowReading(resolveBookPath(), ctx);
+  } else if (kind == CrossPointSettings::SLEEP_WIDGET_CLIPS) {
+    captureClips(ctx);
+  }
+
+  // Metadata joins repeated values with punctuation ("Cal Newport;"). Trim it
+  // from the display copy only, after every consumer has read the originals.
+  trimTrailingSeparators(ctx.bookTitle);
+  trimTrailingSeparators(ctx.bookAuthor);
 }
 
 void draw(const GfxRenderer& renderer, const CrossPointSettings::SLEEP_WIDGET kind, const Context& ctx) {
@@ -278,6 +767,8 @@ void draw(const GfxRenderer& renderer, const CrossPointSettings::SLEEP_WIDGET ki
     case CrossPointSettings::SLEEP_WIDGET_TODO:
       drawTodo(renderer, ctx);
       return;
+    case CrossPointSettings::SLEEP_WIDGET_NOW_READING: drawNowReading(renderer, ctx); return;
+    case CrossPointSettings::SLEEP_WIDGET_CLIPS: drawClips(renderer, ctx); return;
     case CrossPointSettings::SLEEP_WIDGET_NONE:
     case CrossPointSettings::SLEEP_WIDGET_COUNT:
       return;

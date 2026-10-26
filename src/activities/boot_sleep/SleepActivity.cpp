@@ -959,7 +959,7 @@ void SleepActivity::renderCoverSleepScreen() const {
   }
 
   // SSD absolute images use the new thresholds; other panels retain legacy tuning.
-  const bool originalThresholds =
+  const bool absoluteThresholds =
       renderer.grayscaleCapabilities(sleepGrayscaleMode(renderer)).supported() &&
       display.getController() == HalDisplay::Controller::SSD1677 &&
       SETTINGS.sleepScreenCoverFilter == CrossPointSettings::SLEEP_SCREEN_COVER_FILTER::NO_FILTER;
@@ -990,12 +990,12 @@ void SleepActivity::renderCoverSleepScreen() const {
       return (this->*renderNoCoverSleepScreen)();
     }
 
-    if (!lastEpub.generateCoverBmp(cropped, originalThresholds)) {
+    if (!lastEpub.generateCoverBmp(cropped, absoluteThresholds)) {
       LOG_ERR("SLP", "Failed to generate cover bmp");
       return (this->*renderNoCoverSleepScreen)();
     }
 
-    coverBmpPath = lastEpub.getCoverBmpPath(cropped, originalThresholds);
+    coverBmpPath = lastEpub.getCoverBmpPath(cropped, absoluteThresholds);
   } else {
     return (this->*renderNoCoverSleepScreen)();
   }

@@ -771,10 +771,14 @@ const std::string& Epub::getLanguage() const {
   return bookMetadataCache->coreMetadata.language;
 }
 
-std::string Epub::getCoverBmpPath(bool cropped, bool originalThresholds) const {
+std::string Epub::getCoverBmpPath(bool cropped, bool absoluteThresholds) const {
   const auto coverFileName =
-      std::string("cover") + (originalThresholds ? "_original" : "_legacy_v2") + (cropped ? "_crop" : "");
+      std::string("cover") + (absoluteThresholds ? "_original" : "_legacy_v2") + (cropped ? "_crop" : "");
   return cachePath + "/" + coverFileName + ".bmp";
+}
+
+std::string Epub::getWidgetCoverBmpPath(const int boxWidth, const int boxHeight) const {
+  return cachePath + "/cover_widget_" + std::to_string(boxWidth) + "x" + std::to_string(boxHeight) + "_bw.bmp";
 }
 
 namespace {
@@ -849,9 +853,9 @@ bool generateGifBmp(const Epub& epub, const std::string& href, const std::string
 }
 }  // namespace
 
-bool Epub::generateCoverBmp(bool cropped, bool originalThresholds) const {
+bool Epub::generateCoverBmp(bool cropped, bool absoluteThresholds) const {
   // Already generated, return true
-  if (Storage.exists(getCoverBmpPath(cropped, originalThresholds).c_str())) {
+  if (Storage.exists(getCoverBmpPath(cropped, absoluteThresholds).c_str())) {
     return true;
   }
 
@@ -867,13 +871,13 @@ bool Epub::generateCoverBmp(bool cropped, bool originalThresholds) const {
   }
 
   if (Txt::isTxtOrMd(filepath)) {
-    return Txt::convertCoverImageToBmp(coverImageHref, getCoverBmpPath(cropped, originalThresholds), 0, cropped,
-                                       originalThresholds);
+    return Txt::convertCoverImageToBmp(coverImageHref, getCoverBmpPath(cropped, absoluteThresholds), 0, cropped,
+                                       absoluteThresholds);
   }
 
   if (FsHelpers::hasJpgExtension(coverImageHref)) {
     LOG_DBG("EBP", "Generating BMP from JPG cover image (%s mode%s)", cropped ? "cropped" : "fit",
-            originalThresholds ? ", original thresholds" : "");
+            absoluteThresholds ? ", original thresholds" : "");
     const auto coverJpgTempPath = getCachePath() + "/.cover.jpg";
     if (!extractItemToFile(coverImageHref, coverJpgTempPath)) return false;
 
@@ -883,10 +887,10 @@ bool Epub::generateCoverBmp(bool cropped, bool originalThresholds) const {
     }
 
     HalFile coverBmp;
-    if (!Storage.openFileForWrite("EBP", getCoverBmpPath(cropped, originalThresholds), coverBmp)) {
+    if (!Storage.openFileForWrite("EBP", getCoverBmpPath(cropped, absoluteThresholds), coverBmp)) {
       return false;
     }
-    const bool success = JpegToBmpConverter::jpegFileToBmpStream(coverJpg, coverBmp, cropped, originalThresholds);
+    const bool success = JpegToBmpConverter::jpegFileToBmpStream(coverJpg, coverBmp, cropped, absoluteThresholds);
     // Explicitly close() files before calling Storage.remove()
     coverJpg.close();
     coverBmp.close();
@@ -894,7 +898,7 @@ bool Epub::generateCoverBmp(bool cropped, bool originalThresholds) const {
 
     if (!success) {
       LOG_ERR("EBP", "Failed to generate BMP from cover image");
-      Storage.remove(getCoverBmpPath(cropped, originalThresholds).c_str());
+      Storage.remove(getCoverBmpPath(cropped, absoluteThresholds).c_str());
     }
     LOG_DBG("EBP", "Generated BMP from JPG cover image, success: %s", success ? "yes" : "no");
     return success;
@@ -902,7 +906,7 @@ bool Epub::generateCoverBmp(bool cropped, bool originalThresholds) const {
 
   if (FsHelpers::hasPngExtension(coverImageHref)) {
     LOG_DBG("EBP", "Generating BMP from PNG cover image (%s mode%s)", cropped ? "cropped" : "fit",
-            originalThresholds ? ", original thresholds" : "");
+            absoluteThresholds ? ", original thresholds" : "");
     const auto coverPngTempPath = getCachePath() + "/.cover.png";
     if (!extractItemToFile(coverImageHref, coverPngTempPath)) return false;
 
@@ -912,10 +916,10 @@ bool Epub::generateCoverBmp(bool cropped, bool originalThresholds) const {
     }
 
     HalFile coverBmp;
-    if (!Storage.openFileForWrite("EBP", getCoverBmpPath(cropped, originalThresholds), coverBmp)) {
+    if (!Storage.openFileForWrite("EBP", getCoverBmpPath(cropped, absoluteThresholds), coverBmp)) {
       return false;
     }
-    const bool success = PngToBmpConverter::pngFileToBmpStream(coverPng, coverBmp, cropped, originalThresholds);
+    const bool success = PngToBmpConverter::pngFileToBmpStream(coverPng, coverBmp, cropped, absoluteThresholds);
     // Explicitly close() files before calling Storage.remove()
     coverPng.close();
     coverBmp.close();
@@ -923,20 +927,108 @@ bool Epub::generateCoverBmp(bool cropped, bool originalThresholds) const {
 
     if (!success) {
       LOG_ERR("EBP", "Failed to generate BMP from PNG cover image");
-      Storage.remove(getCoverBmpPath(cropped, originalThresholds).c_str());
+      Storage.remove(getCoverBmpPath(cropped, absoluteThresholds).c_str());
     }
     LOG_DBG("EBP", "Generated BMP from PNG cover image, success: %s", success ? "yes" : "no");
     return success;
   }
 
   if (FsHelpers::hasGifExtension(coverImageHref)) {
-    return generateGifBmp(*this, coverImageHref, getCoverBmpPath(cropped, originalThresholds),
-                          [cropped, originalThresholds](HalFile& gif, Print& bmp) {
-                            return GifToBmpConverter::gifFileToBmpStream(gif, bmp, cropped, originalThresholds);
+    return generateGifBmp(*this, coverImageHref, getCoverBmpPath(cropped, absoluteThresholds),
+                          [cropped, absoluteThresholds](HalFile& gif, Print& bmp) {
+                            return GifToBmpConverter::gifFileToBmpStream(gif, bmp, cropped, absoluteThresholds);
                           });
   }
 
   LOG_ERR("EBP", "Cover image is not a supported format, skipping");
+  return false;
+}
+
+bool Epub::generateWidgetCoverBmp(const int boxWidth, const int boxHeight) const {
+  // Already generated, return true
+  if (Storage.exists(getWidgetCoverBmpPath(boxWidth, boxHeight).c_str())) {
+    return true;
+  }
+
+  if (!bookMetadataCache || !bookMetadataCache->isLoaded()) {
+    LOG_ERR("EBP", "Cannot generate widget cover BMP, cache not loaded");
+    return false;
+  }
+
+  const auto coverImageHref = bookMetadataCache->coreMetadata.coverItemHref;
+  if (coverImageHref.empty()) {
+    LOG_ERR("EBP", "No known cover image");
+    return false;
+  }
+
+  // TXT/MD companions have no image stream the sized converters can read, so
+  // the caller falls back to the screen-sized cover path for those.
+  if (Txt::isTxtOrMd(filepath)) return false;
+
+  if (FsHelpers::hasJpgExtension(coverImageHref)) {
+    const auto coverJpgTempPath = getCachePath() + "/.cover.jpg";
+    if (!extractItemToFile(coverImageHref, coverJpgTempPath)) return false;
+
+    HalFile coverJpg;
+    if (!Storage.openFileForRead("EBP", coverJpgTempPath, coverJpg)) {
+      return false;
+    }
+
+    HalFile coverBmp;
+    if (!Storage.openFileForWrite("EBP", getWidgetCoverBmpPath(boxWidth, boxHeight), coverBmp)) {
+      return false;
+    }
+    // 1-bit, like the home grid thumbnails: the widget paints in BW mode, so a
+    // 4-level dither designed for the grayscale plane would collapse to stipple.
+    const bool success =
+        JpegToBmpConverter::jpegFileTo1BitBmpStreamWithSize(coverJpg, coverBmp, boxWidth, boxHeight);
+    // Explicitly close() files before calling Storage.remove()
+    coverJpg.close();
+    coverBmp.close();
+    Storage.remove(coverJpgTempPath.c_str());
+
+    if (!success) {
+      LOG_ERR("EBP", "Failed to generate widget cover BMP from JPG cover image");
+      Storage.remove(getWidgetCoverBmpPath(boxWidth, boxHeight).c_str());
+    }
+    return success;
+  }
+
+  if (FsHelpers::hasPngExtension(coverImageHref)) {
+    const auto coverPngTempPath = getCachePath() + "/.cover.png";
+    if (!extractItemToFile(coverImageHref, coverPngTempPath)) return false;
+
+    HalFile coverPng;
+    if (!Storage.openFileForRead("EBP", coverPngTempPath, coverPng)) {
+      return false;
+    }
+
+    HalFile coverBmp;
+    if (!Storage.openFileForWrite("EBP", getWidgetCoverBmpPath(boxWidth, boxHeight), coverBmp)) {
+      return false;
+    }
+    const bool success =
+        PngToBmpConverter::pngFileTo1BitBmpStreamWithSize(coverPng, coverBmp, boxWidth, boxHeight);
+    // Explicitly close() files before calling Storage.remove()
+    coverPng.close();
+    coverBmp.close();
+    Storage.remove(coverPngTempPath.c_str());
+
+    if (!success) {
+      LOG_ERR("EBP", "Failed to generate widget cover BMP from PNG cover image");
+      Storage.remove(getWidgetCoverBmpPath(boxWidth, boxHeight).c_str());
+    }
+    return success;
+  }
+
+  if (FsHelpers::hasGifExtension(coverImageHref)) {
+    return generateGifBmp(*this, coverImageHref, getWidgetCoverBmpPath(boxWidth, boxHeight),
+                          [boxWidth, boxHeight](HalFile& gif, Print& bmp) {
+                            return GifToBmpConverter::gifFileTo1BitBmpStreamWithSize(gif, bmp, boxWidth, boxHeight);
+                          });
+  }
+
+  LOG_ERR("EBP", "Widget cover supports JPG, PNG, and GIF covers only, skipping");
   return false;
 }
 
