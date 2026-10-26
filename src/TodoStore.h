@@ -40,6 +40,10 @@ class TodoStore : public PersistableStore<TodoStore> {
   bool updateItem(size_t index, const std::string& text);
   bool setDone(size_t index, bool done);
   bool removeItem(size_t index);
+  // Moves the item at `from` to position `to`, shifting the others. Both indices must
+  // be inside the list. A no-op move (from == to) returns true without writing the SD
+  // card. Persists on change.
+  bool moveItem(size_t from, size_t to);
 
   const std::vector<TodoItem>& getItems() const { return items; }
   size_t undoneCount() const;

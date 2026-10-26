@@ -15,6 +15,11 @@
 
 namespace fui = freeink::ui;
 
+namespace {
+// Entry actions of the per-item option menu, in the order they can appear.
+enum ItemAction : int { kToggle, kMoveUp, kMoveDown, kEdit, kDelete };
+}  // namespace
+
 TodoListActivity::TodoListActivity(GfxRenderer& renderer, MappedInputManager& mappedInput)
     : UiListActivity("TodoList", renderer, mappedInput) {}
 
@@ -119,26 +124,60 @@ void TodoListActivity::showItemOptions(const size_t index) {
   const TodoItem& item = items[index];
 
   const StrId toggleLabel = item.done ? StrId::STR_TODO_MARK_UNDONE : StrId::STR_TODO_MARK_DONE;
-  const char* labels[3] = {I18N.get(toggleLabel), tr(STR_TODO_EDIT), tr(STR_TODO_DELETE)};
-  optionPopup.show(item.text.c_str(), labels, 3, 0, [this, index](const int selected) {
-    const auto& current = TODO_STORE.getItems();
-    if (index >= current.size()) return;
-    switch (selected) {
-      case 0:
-        TODO_STORE.setDone(index, !current[index].done);
-        rebuildRowItems();
-        requestUpdate();
-        break;
-      case 1:
-        editItem(index);
-        break;
-      case 2:
-        confirmDelete(index);
-        break;
-      default:
-        break;
-    }
-  });
+
+  // Built list so a move entry only exists where the row can actually move.
+  std::vector<std::string> labels;
+  std::vector<int> actions;
+  labels.reserve(5);
+  actions.reserve(5);
+
+  labels.emplace_back(I18N.get(toggleLabel));
+  actions.push_back(kToggle);
+  if (index > 0) {
+    labels.emplace_back(tr(STR_TODO_MOVE_UP));
+    actions.push_back(kMoveUp);
+  }
+  if (index + 1 < items.size()) {
+    labels.emplace_back(tr(STR_TODO_MOVE_DOWN));
+    actions.push_back(kMoveDown);
+  }
+  labels.emplace_back(tr(STR_TODO_EDIT));
+  actions.push_back(kEdit);
+  labels.emplace_back(tr(STR_TODO_DELETE));
+  actions.push_back(kDelete);
+
+  std::vector<const char*> ptrs;
+  ptrs.reserve(labels.size());
+  for (const auto& label : labels) ptrs.push_back(label.c_str());
+
+  optionPopup.show(item.text.c_str(), ptrs.data(), static_cast<int>(ptrs.size()), 0,
+                   [this, index, actions](const int selected) {
+                     if (selected < 0 || selected >= static_cast<int>(actions.size())) return;
+                     const auto& current = TODO_STORE.getItems();
+                     if (index >= current.size()) return;
+                     switch (actions[selected]) {
+                       case kToggle:
+                         TODO_STORE.setDone(index, !current[index].done);
+                         rebuildRowItems();
+                         requestUpdate();
+                         break;
+                       case kMoveUp:
+                       case kMoveDown: {
+                         const size_t newIndex = actions[selected] == kMoveUp ? index - 1 : index + 1;
+                         TODO_STORE.moveItem(index, newIndex);
+                         nav.selected = static_cast<int>(newIndex);
+                         rebuildRowItems();
+                         requestUpdate();
+                         break;
+                       }
+                       case kEdit:
+                         editItem(index);
+                         break;
+                       case kDelete:
+                         confirmDelete(index);
+                         break;
+                     }
+                   });
   requestUpdate();
 }
 

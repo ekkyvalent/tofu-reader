@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <utility>
 
 namespace {
 
@@ -104,6 +105,19 @@ bool TodoStore::removeItem(size_t index) {
 
   LOG_DBG("TODO", "Removed todo item: %s", items[index].text.c_str());
   items.erase(items.begin() + static_cast<ptrdiff_t>(index));
+  return saveToFile();
+}
+
+bool TodoStore::moveItem(size_t from, size_t to) {
+  if (from >= items.size() || to >= items.size()) {
+    return false;
+  }
+  if (from == to) return true;  // unchanged: skip the SD write
+
+  TodoItem moved = std::move(items[from]);
+  items.erase(items.begin() + static_cast<ptrdiff_t>(from));
+  items.insert(items.begin() + static_cast<ptrdiff_t>(to), std::move(moved));
+  LOG_DBG("TODO", "Moved todo item to position %zu: %s", to, items[to].text.c_str());
   return saveToFile();
 }
 
