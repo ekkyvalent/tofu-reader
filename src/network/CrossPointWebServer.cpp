@@ -9,6 +9,7 @@
 #include <HalGPIO.h>
 #include <HalMemory.h>
 #include <HalStorage.h>
+#include <HiddenItems.h>
 #include <I18n.h>
 #include <LibraryBuilder.h>
 #include <Logging.h>
@@ -88,10 +89,6 @@ void releaseRequestArguments(WebServer* server) {
   static_cast<CrossPointHttpServer*>(server)->releaseRequestArguments();
 }
 
-// Folders/files to hide from the web interface file browser
-// Note: Items starting with "." are automatically hidden
-constexpr const char* HIDDEN_ITEMS[] = {"System Volume Information", "XTCache"};
-
 constexpr uint16_t UDP_PORTS[] = {54982, 48123, 39001, 44044, 59678};
 constexpr uint16_t LOCAL_UDP_PORT = 8134;
 
@@ -134,7 +131,7 @@ bool isProtectedItemName(const String& name) {
   if (name.startsWith(".")) {
     return true;
   }
-  for (const auto* item : HIDDEN_ITEMS) {
+  for (const auto* item : FsHelpers::HIDDEN_ITEMS) {
     if (name.equals(item)) {
       return true;
     }
@@ -612,7 +609,7 @@ void CrossPointWebServer::scanFiles(const char* path, const std::function<void(F
 
     // Check against explicitly hidden items list
     if (!shouldHide) {
-      for (const auto* item : HIDDEN_ITEMS) {
+      for (const auto* item : FsHelpers::HIDDEN_ITEMS) {
         if (fileName.equals(item)) {
           shouldHide = true;
           break;
@@ -738,7 +735,7 @@ void CrossPointWebServer::handleDownload() const {
     server->send(403, "text/plain", "Cannot access system files");
     return;
   }
-  for (const auto* item : HIDDEN_ITEMS) {
+  for (const auto* item : FsHelpers::HIDDEN_ITEMS) {
     if (itemName.equals(item)) {
       server->send(403, "text/plain", "Cannot access protected items");
       return;
@@ -1286,7 +1283,7 @@ void CrossPointWebServer::handleDelete() const {
 
     // Check against explicitly protected items
     bool isProtected = false;
-    for (const auto* item : HIDDEN_ITEMS) {
+    for (const auto* item : FsHelpers::HIDDEN_ITEMS) {
       if (itemName.equals(item)) {
         isProtected = true;
         break;
@@ -2321,6 +2318,14 @@ void CrossPointWebServer::handleFetch() {
     written = 0;
     return Storage.openFileForWrite("PLG", part, file);
   };
+  // The write callback only runs when bytes arrive; with the 60s no-data
+  // timeout a server stall would starve this task's WDT subscription.
+  // shouldAbort is polled in every wait loop, and by connect().
+  const auto feedWatchdog = [&] {
+    resetTaskWatchdogIfSubscribed();
+    keepBrowserAlive();
+    return false;  // never aborts; only feeds
+  };
   const freeink::FetchResult result = freeink::fetchResumable(
       url, options,
       [&](freeink::SecureHttpClient& http, const bool sameOrigin) {
@@ -2334,19 +2339,15 @@ void CrossPointWebServer::handleFetch() {
         http.setTimeout(60000);
         // The plugin's headers (typically its Authorization) stay with the
         // starting origin; a redirect to another server gets none of them.
-        if (sameOrigin) {
+        if (sameOrigin && !requestHeaders.empty()) {
+          // Handshake before the client copies the headers: a several-KB session
+          // cookie would otherwise take heap the handshake needs. A failed connect
+          // is retried, and reported, by the request itself.
+          http.connect(feedWatchdog);
           for (const auto& header : requestHeaders) http.addHeader(header.first, header.second);
         }
       },
-      sink,
-      // The write callback only runs when bytes arrive; with the 60s no-data
-      // timeout a server stall would starve this task's WDT subscription.
-      // shouldAbort is polled in every wait loop.
-      [&] {
-        resetTaskWatchdogIfSubscribed();
-        keepBrowserAlive();
-        return false;  // never aborts; only feeds
-      });
+      sink, feedWatchdog);
   if (file.isOpen()) {
     file.flush();
     file.close();
@@ -2874,15 +2875,17 @@ void CrossPointWebServer::handleFontList() const {
     }
 
     JsonArray files = fObj["files"].to<JsonArray>();
+    char path[SdCardFontFamilyInfo::PATH_BUFFER_SIZE];
     for (const auto& file : family.files) {
+      if (!family.filePath(file, path, sizeof(path))) continue;
       JsonObject fileObj = files.add<JsonObject>();
       // Extract filename from full path
-      const char* name = strrchr(file.path.c_str(), '/');
-      fileObj["name"] = name ? name + 1 : file.path.c_str();
+      const char* name = strrchr(path, '/');
+      fileObj["name"] = name ? name + 1 : path;
 
       // Stat the file for size
       HalFile f;
-      if (Storage.openFileForRead("WEB", file.path.c_str(), f)) {
+      if (Storage.openFileForRead("WEB", path, f)) {
         fileObj["size"] = static_cast<unsigned long>(f.size());
         f.close();
       } else {
