@@ -16,6 +16,7 @@
 
 #include "CrossPointSettings.h"
 #include "MappedInputManager.h"
+#include "ReadStore.h"
 #include "RecentBooksStore.h"
 #include "activities/util/ConfirmationActivity.h"
 #include "activities/util/KeyboardEntryActivity.h"
@@ -280,16 +281,45 @@ void LibraryListActivity::showRecentBookOptions(const int entry) {
     }
   }
 
-  const char* STORE_OPTIONS[] = {tr(STR_OPEN), tr(STR_REMOVE_FROM_RECENTS), tr(STR_DELETE), tr(STR_LIBRARY_REBUILD)};
-  const char* INDEX_OPTIONS[] = {tr(STR_OPEN), tr(STR_DELETE), tr(STR_LIBRARY_REBUILD)};
+  // Mark as unread is a dead option for a book under /read/ (folder membership
+  // wins), so the row is omitted for those paths.
+  const bool canToggleRead = !isInReadFolder(path);
+  const char* markLabel = READ_STORE.isRead(path) ? tr(STR_MARK_AS_UNREAD) : tr(STR_MARK_AS_READ);
+  const char* STORE_OPTIONS[5];
+  const char* INDEX_OPTIONS[4];
+  int storeCount = 0;
+  int indexCount = 0;
+  STORE_OPTIONS[storeCount++] = tr(STR_OPEN);
+  INDEX_OPTIONS[indexCount++] = tr(STR_OPEN);
+  if (canToggleRead) {
+    STORE_OPTIONS[storeCount++] = markLabel;
+    INDEX_OPTIONS[indexCount++] = markLabel;
+  }
+  STORE_OPTIONS[storeCount++] = tr(STR_REMOVE_FROM_RECENTS);
+  STORE_OPTIONS[storeCount++] = tr(STR_DELETE);
+  STORE_OPTIONS[storeCount++] = tr(STR_LIBRARY_REBUILD);
+  INDEX_OPTIONS[indexCount++] = tr(STR_DELETE);
+  INDEX_OPTIONS[indexCount++] = tr(STR_LIBRARY_REBUILD);
+
   app.clearTapFlash();
-  optionPopup.show(tr(STR_LIBRARY), title.c_str(), isStoreRow ? STORE_OPTIONS : INDEX_OPTIONS, isStoreRow ? 4 : 3, 0,
-                   [this, path, title, isStoreRow](const int choice) {
+  optionPopup.show(tr(STR_LIBRARY), title.c_str(), isStoreRow ? STORE_OPTIONS : INDEX_OPTIONS,
+                   isStoreRow ? storeCount : indexCount, 0,
+                   [this, path, title, isStoreRow, canToggleRead](const int choice) {
                      swallowHeldReleases();
-                     switch (choice) {
-                       case 0:
-                         openBookByPath(path);
-                         break;
+                     if (choice == 0) {
+                       openBookByPath(path);
+                       return;
+                     }
+                     if (canToggleRead && choice == 1) {
+                       if (READ_STORE.markRead(path, !READ_STORE.isRead(path))) {
+                         requestUpdate(true);
+                       } else {
+                         LOG_ERR("LIB", "cannot update read state for %s", path.c_str());
+                       }
+                       return;
+                     }
+                     // The mark row shifts every later option by one when present.
+                     switch (canToggleRead ? choice - 1 : choice) {
                        case 1:
                          if (isStoreRow) {
                            promptRemoveRecentBook(path, title);
@@ -418,7 +448,11 @@ void LibraryListActivity::promptDeleteBookByPath(const std::string& path, const 
       RenderLock lock(*this);
       if (!result.isCancelled) {
         LOG_DBG("LIB", "deleting %s", path.c_str());
-        if (!removeBookFile(path)) LOG_ERR("LIB", "cannot delete %s", path.c_str());
+        if (removeBookFile(path)) {
+          READ_STORE.erase(path);
+        } else {
+          LOG_ERR("LIB", "cannot delete %s", path.c_str());
+        }
         if (RECENT_BOOKS.removeByPath(path)) RECENT_BOOKS.saveToFile();
         GUI.drawPopup(renderer, tr(STR_LIBRARY_REBUILDING));
         rebuildIndex();

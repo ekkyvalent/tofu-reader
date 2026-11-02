@@ -60,7 +60,7 @@ class EpubReaderActivity final : public ReaderActivity {
   std::vector<BookmarkEntry> cachedBookmarks;
   bool recentsEntryRemoved = false;
   unsigned long bookmarkMessageTime = 0UL;
-  bool pendingReadFolderMove = false;
+  bool pendingMarkRead = false;
 
   // Toolbar reader menu (SETTINGS.readerMenuStyle == READER_MENU_TOOLBAR): drawn
   // over the page instead of pushing the full-screen list menu. Select opens the

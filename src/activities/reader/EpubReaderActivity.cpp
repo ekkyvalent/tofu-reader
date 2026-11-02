@@ -45,6 +45,7 @@
 #include "ReaderActivity.h"
 #include "ReaderFontSizes.h"
 #include "ReaderToolbarUi.h"
+#include "ReadStore.h"
 #include "ReaderUtils.h"
 #include "RecentBooksStore.h"
 #include "SdCardFont.h"
@@ -107,13 +108,6 @@ int clampPercent(int percent) {
   return percent;
 }
 
-constexpr char READ_FOLDER[] = "/read";
-
-bool isInReadFolder(const std::string& path) {
-  constexpr size_t n = sizeof(READ_FOLDER) - 1;
-  return path.size() > n && path.compare(0, n, READ_FOLDER) == 0 && path[n] == '/';
-}
-
 struct ProgressRange {
   float start;
   float end;
@@ -144,69 +138,6 @@ bool bookmarkMatchesProgress(const BookmarkEntry& bookmark, const int spineIndex
          bookmarkProgress - bookmarkProgressEpsilon <= pageRange.end;
 }
 
-std::string buildReadFolderDestination(const std::string& srcPath) {
-  const size_t lastSlash = srcPath.rfind('/');
-  const std::string filename = (lastSlash != std::string::npos) ? srcPath.substr(lastSlash + 1) : srcPath;
-
-  Storage.mkdir(READ_FOLDER);
-  std::string dstPath = std::string(READ_FOLDER) + "/" + filename;
-  if (!Storage.exists(dstPath.c_str())) {
-    return dstPath;
-  }
-
-  const size_t dotPos = filename.rfind('.');
-  const std::string base = (dotPos != std::string::npos) ? filename.substr(0, dotPos) : filename;
-  const std::string ext = (dotPos != std::string::npos) ? filename.substr(dotPos) : "";
-  int suffix = 2;
-  do {
-    dstPath = std::string(READ_FOLDER) + "/" + base + " (" + std::to_string(suffix) + ")" + ext;
-    suffix++;
-  } while (Storage.exists(dstPath.c_str()) && suffix < 100);
-  return dstPath;
-}
-
-void moveFinishedBookToReadFolder(const std::string& srcPath, const std::string& dstPath,
-                                  const std::string& oldCachePath) {
-  LOG_INF("ERS", "Moving finished epub: %s -> %s", srcPath.c_str(), dstPath.c_str());
-  if (!ClippingStore::moveBook(srcPath, dstPath)) {
-    LOG_ERR("ERS", "Failed to move finished book and clippings to '/Read' folder");
-    return;
-  }
-
-  // Protected-book sidecars travel with the book; a protected book separated
-  // from its key no longer opens, so a failed move rolls everything back.
-  static constexpr const char* SIDECARS[] = {".key", ".rights"};
-  for (size_t i = 0; i < std::size(SIDECARS); i++) {
-    const std::string from = srcPath + SIDECARS[i];
-    if (!Storage.exists(from.c_str())) continue;
-    const std::string to = dstPath + SIDECARS[i];
-    if (Storage.rename(from.c_str(), to.c_str())) continue;
-    LOG_ERR("ERS", "Failed to move sidecar %s -> %s", from.c_str(), to.c_str());
-    for (size_t j = 0; j < i; j++) {
-      Storage.rename((dstPath + SIDECARS[j]).c_str(), (srcPath + SIDECARS[j]).c_str());
-    }
-    if (!Storage.rename(dstPath.c_str(), srcPath.c_str())) {
-      LOG_ERR("ERS", "Failed to restore epub after sidecar move failure: %s -> %s", dstPath.c_str(), srcPath.c_str());
-    }
-    return;
-  }
-
-  const std::string newCachePath = "/.crosspoint/epub_" + std::to_string(std::hash<std::string>{}(dstPath));
-  bool cacheMoved = false;
-  if (!oldCachePath.empty() && Storage.exists(oldCachePath.c_str())) {
-    cacheMoved = Storage.rename(oldCachePath.c_str(), newCachePath.c_str());
-    if (!cacheMoved) {
-      LOG_ERR("ERS", "Failed to rename cache dir %s -> %s (non-fatal)", oldCachePath.c_str(), newCachePath.c_str());
-    }
-  }
-
-  RECENT_BOOKS.updatePath(srcPath, dstPath, oldCachePath, cacheMoved ? newCachePath : oldCachePath);
-  if (APP_STATE.openEpubPath == srcPath) {
-    APP_STATE.openEpubPath = dstPath;
-    APP_STATE.saveToFile();
-  }
-}
-
 // A button contact is closed right now. Reads the Xteink ADC ladder and power pin only; on other
 // boards a press stops the build once the loop has debounced it.
 bool buttonContactClosed() { return gpio.rawInputActive(); }
@@ -226,15 +157,11 @@ EpubReaderActivity::~EpubReaderActivity() {
 
   section.reset();
   CLIPPINGS.unload();
-  if (pendingReadFolderMove && epub) {
-    const std::string srcPath = epub->getPath();
-    const std::string oldCachePath = epub->getCachePath();
-    const std::string dstPath = buildReadFolderDestination(srcPath);
-    epub.reset();
-    moveFinishedBookToReadFolder(srcPath, dstPath, oldCachePath);
-  } else {
-    epub.reset();
+  if (pendingMarkRead && epub) {
+    READ_STORE.markRead(epub->getPath(), true);
+    pendingMarkRead = false;
   }
+  epub.reset();
 }
 
 bool EpubReaderActivity::loadBook() {
@@ -724,9 +651,9 @@ void EpubReaderActivity::loop() {
   }
 
   if (atEndOfBook) {
-    pendingReadFolderMove = SETTINGS.moveFinishedToReadFolder && !isInReadFolder(epub->getPath());
+    pendingMarkRead = true;
   } else {
-    pendingReadFolderMove = false;
+    pendingMarkRead = false;
   }
 
   const auto touch =

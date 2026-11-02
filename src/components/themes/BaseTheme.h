@@ -129,6 +129,12 @@ struct ThemeMetrics {
   int controlRadius;
   int sheetRadius;
   int capsuleRadius;
+
+  // Cover Grid home: text filter row above the hero/grid and the READ badge
+  // band on a cover. Defaulted members keep every existing theme unchanged.
+  int coverGridFilterRowHeight = 44;  // text tab row above the hero/grid
+  int coverGridFilterUnderline = 2;   // selected-tab underline thickness
+  int readBadgeHeight = 18;           // READ badge band on a cover
 };
 
 enum UIIcon {

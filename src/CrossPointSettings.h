@@ -386,7 +386,7 @@ class CrossPointSettings : public PersistableStore<CrossPointSettings> {
   uint8_t libraryUseMetadata = 1;
   // Remove a book from the Recent Books list when its End-of-Book screen is reached (0 = off, 1 = on)
   uint8_t removeReadBooksFromRecents = 0;
-  // Move epub to /Read/ folder on SD card when finished (0 = disabled, 1 = enabled)
+  // Deprecated: no longer read; kept only so the settings JSON keeps its shape.
   uint8_t moveFinishedToReadFolder = 0;
   // Short press Back goes to file browser instead of home (0 = disabled, 1 = enabled)
   uint8_t backShortToFileBrowser = 0;

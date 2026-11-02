@@ -22,6 +22,7 @@
 #include "HapticFeedback.h"
 #include "MappedInputManager.h"
 #include "OpdsServerStore.h"
+#include "ReadStore.h"
 #include "RecentBooksStore.h"
 #include "components/UITheme.h"
 #include "fontIds.h"
@@ -54,46 +55,6 @@ void HomeActivity::loadRecentBooks(int maxBooks) {
     }
 
     recentBooks.push_back(book);
-  }
-}
-
-void HomeActivity::fillCoverGridFromLibrary() {
-  if (recentBooks.size() >= CoverGridHomeUi::MAX_BOOKS) return;
-  // Keep the index and record together off the task stack; reuse for every row.
-  struct LibraryReader {
-    library::LibraryIndexFile index;
-    library::ClixRecord record;
-  };
-  auto reader = makeUniqueNoThrow<LibraryReader>();
-  if (!reader) {
-    LOG_ERR("HOME", "OOM: library index");
-    return;
-  }
-  auto& index = reader->index;
-  auto& record = reader->record;
-  if (!index.open(library::libraryIndexPath())) {
-    index.close();
-    GUI.drawPopup(renderer, tr(STR_LIBRARY_REBUILDING));
-    library::BuildStats stats;
-    if (!library::buildLibraryIndex("/", stats, SETTINGS.libraryUseMetadata != 0) ||
-        !index.open(library::libraryIndexPath())) {
-      LOG_ERR("HOME", "Cannot populate cover grid from library");
-      return;
-    }
-  }
-  for (uint16_t row = 0; row < index.bookCount() && recentBooks.size() < CoverGridHomeUi::MAX_BOOKS; ++row) {
-    RecentBook book;
-    if (!index.readRecord(index.ordinalForRow(library::SortOrder::RecentDesc, row), record) ||
-        !index.readPath(record, book.path))
-      continue;
-    if (std::any_of(recentBooks.begin(), recentBooks.end(),
-                    [&](const RecentBook& existing) { return existing.path == book.path; }) ||
-        RecentBooksStore::isMissing(book))
-      continue;
-    if (!index.readTitle(record, book.title) && !index.readName(record, book.title)) continue;
-    index.readAuthor(record, book.author);
-    if (index.ioFailed()) break;
-    recentBooks.push_back(std::move(book));
   }
 }
 
@@ -239,14 +200,31 @@ void HomeActivity::onEnter() {
   if (UITheme::getInstance().hasCoverGridHome()) {
     // Screen-lifetime interaction tables and component properties exceed the stack budget.
     coverGridUi = makeUniqueNoThrow<CoverGridHomeUi>(renderer);
-    if (!coverGridUi) LOG_ERR("HOME", "OOM: cover grid UI; using standard home");
+    if (!coverGridUi) {
+      LOG_ERR("HOME", "OOM: cover grid UI; using standard home");
+    } else {
+      // First paint shows the loading slot; loop() resolves the page after it.
+      // The page walk lives in resolvePage(), outside the render path.
+      recentBooks.clear();
+      filter = HomeFilter::Home;
+      focus = initialMenuItem == HomeMenuItem::NONE ? HomeBand::Books : HomeBand::Bottom;
+      filterIndex = 0;
+      bookIndex = 0;
+      bottomIndex = initialMenuItem == HomeMenuItem::NONE ? 0 : menuItemToIndex(initialMenuItem, hasLibrarySlot());
+      pageIndex = 0;
+      hasHero = false;
+      pageExhausted = false;
+      pageCursor = 0;
+      pageResolved = false;
+      resolvedFilter = HomeFilter::Home;
+      resolvedPage = -1;
+      hasContinueReading = false;
+      coverGridUi->begin(recentBooks, hasLibrarySlot(), false);
+    }
   }
-  loadRecentBooks(coverGridUi ? CoverGridHomeUi::MAX_BOOKS : metrics.homeRecentBooksCount);
-  hasContinueReading = !recentBooks.empty();
-  if (coverGridUi) {
-    fillCoverGridFromLibrary();
-    resolveGridCoverPaths();
-    coverGridUi->begin(recentBooks, hasLibrarySlot(), hasContinueReading);
+  if (!coverGridUi) {
+    loadRecentBooks(metrics.homeRecentBooksCount);
+    hasContinueReading = !recentBooks.empty();
   }
 
   const auto base = static_cast<int>(recentBooks.size());
@@ -263,6 +241,256 @@ void HomeActivity::onExit() {
 
   // Free the stored cover buffer if any
   freeCoverBuffer();
+}
+
+int HomeActivity::bottomMenuCount() const { return 5 + (hasLibrarySlot() ? 1 : 0); }
+
+int HomeActivity::pageSizeFor(const int page) const {
+  return filter == HomeFilter::Home && page == 0 ? 1 + kHomeHeroPage : kGridPage;
+}
+
+int HomeActivity::rowsForPage() const { return filter == HomeFilter::Home && pageIndex == 0 ? 2 : 3; }
+
+void HomeActivity::resolvePage() {
+  if (!coverGridUi) {
+    pageResolved = true;
+    return;
+  }
+  const int pageSize = pageSizeFor(pageIndex);
+  // A forward step continues from the row after the last resolved page; every
+  // other request (backwards, filter change, read-state change) rescans from
+  // the start and skips the accepted books of the earlier pages.
+  const bool forward = filter == resolvedFilter && pageIndex == resolvedPage + 1;
+  const bool useCursor = forward && (filter != HomeFilter::Home || pageIndex >= 2);
+  const int startRow = useCursor ? static_cast<int>(pageCursor) : 0;
+  int skip = 0;
+  if (!useCursor) {
+    if (filter == HomeFilter::Home) {
+      skip = pageIndex == 0 ? 0 : (kHomeHeroPage + 1) + (pageIndex - 1) * kGridPage;
+    } else {
+      skip = pageIndex * kGridPage;
+    }
+  }
+
+  std::vector<RecentBook> page;
+  page.reserve(pageSize);
+
+  // Keep the index and record together off the task stack; reuse for every row.
+  struct LibraryReader {
+    library::LibraryIndexFile index;
+    library::ClixRecord record;
+  };
+  auto reader = makeUniqueNoThrow<LibraryReader>();
+  bool indexReady = false;
+  if (reader) {
+    if (reader->index.open(library::libraryIndexPath())) {
+      indexReady = true;
+    } else {
+      reader->index.close();
+      library::BuildStats stats;
+      if (library::buildLibraryIndex("/", stats, SETTINGS.libraryUseMetadata != 0)) {
+        indexReady = reader->index.open(library::libraryIndexPath());
+      }
+    }
+  }
+  if (!indexReady) LOG_ERR("HOME", "Cannot read the library index");
+
+  int nextRow = startRow;
+  bool streamEnded = !indexReady;
+  const auto take = [&page, &skip, pageSize](RecentBook&& book) {
+    if (skip > 0) {
+      --skip;
+      return false;
+    }
+    page.push_back(std::move(book));
+    return static_cast<int>(page.size()) >= pageSize;
+  };
+
+  std::vector<std::string> taken;
+  const auto isTaken = [&taken](const std::string& path) {
+    return std::find(taken.begin(), taken.end(), path) != taken.end();
+  };
+
+  bool filled = false;
+  if (filter == HomeFilter::Home && !useCursor) {
+    // Page 0 and the first paged walk: most-recent-first, not-read, no
+    // duplicates. The index rows below continue from this order.
+    for (const RecentBook& book : RECENT_BOOKS.getBooks()) {
+      if (READ_STORE.isRead(book.path) || RecentBooksStore::isMissing(book) || isTaken(book.path)) continue;
+      taken.push_back(book.path);
+      RecentBook copy = book;
+      if (take(std::move(copy))) {
+        filled = true;
+        break;
+      }
+    }
+  }
+
+  if (!filled && indexReady && reader) {
+    const int rows = reader->index.bookCount();
+    for (int row = startRow; row < rows; ++row) {
+      nextRow = row + 1;
+      const uint16_t ordinal =
+          reader->index.ordinalForRow(library::SortOrder::RecentDesc, static_cast<uint16_t>(row));
+      if (ordinal == 0xFFFF) break;
+      RecentBook book;
+      if (!reader->index.readRecord(ordinal, reader->record)) {
+        if (reader->index.ioFailed()) {
+          streamEnded = true;
+          break;
+        }
+        continue;
+      }
+      if (!reader->index.readPath(reader->record, book.path)) continue;
+      if (filter == HomeFilter::Home) {
+        if (READ_STORE.isRead(book.path) || isTaken(book.path)) continue;
+      } else if (filter == HomeFilter::Archived) {
+        if (!READ_STORE.isRead(book.path)) continue;
+      }
+      if (!reader->index.readTitle(reader->record, book.title) || book.title.empty()) {
+        reader->index.readName(reader->record, book.title);
+      }
+      reader->index.readAuthor(reader->record, book.author);
+      if (book.title.empty()) book.title = tr(STR_LIBRARY_UNKNOWN_TITLE);
+      if (take(std::move(book))) {
+        filled = true;
+        streamEnded = row + 1 >= rows;
+        break;
+      }
+    }
+    if (!filled) streamEnded = true;
+  }
+
+  if (page.empty() && pageIndex > 0) {
+    // The walk ended on the previous page boundary: step back and let the
+    // next loop resolve the page that does exist.
+    --pageIndex;
+    bookIndex = 0;
+    pageExhausted = true;
+    pageResolved = false;
+    requestUpdate();
+    return;
+  }
+
+  {
+    RenderLock lock(*this);
+    recentBooks = std::move(page);
+    hasHero = filter == HomeFilter::Home && pageIndex == 0 && !recentBooks.empty();
+    hasContinueReading = hasHero;
+    if (bookIndex >= static_cast<int>(recentBooks.size())) {
+      bookIndex = recentBooks.empty() ? 0 : static_cast<int>(recentBooks.size()) - 1;
+    }
+    resolveGridCoverPaths();
+    coverGridUi->begin(recentBooks, hasLibrarySlot(), hasHero);
+    recentsLoaded = false;
+    pageResolved = true;
+    halfRepaintPending = true;
+    resolvedFilter = filter;
+    resolvedPage = pageIndex;
+    pageCursor = static_cast<uint16_t>(nextRow);
+    pageExhausted = streamEnded;
+  }
+  requestUpdate(true);
+}
+
+void HomeActivity::selectFilter(const int index) {
+  const int next = std::clamp(index, 0, 2);
+  filterIndex = next;
+  focus = HomeBand::Filter;
+  const auto nextFilter = static_cast<HomeFilter>(next);
+  if (filter == nextFilter) {
+    requestUpdate();
+    return;
+  }
+  filter = nextFilter;
+  pageIndex = 0;
+  pageCursor = 0;
+  resolvedPage = -1;
+  bookIndex = 0;
+  pageExhausted = false;
+  pageResolved = false;
+  recentsLoaded = false;
+  halfRepaintPending = true;
+  resolvePage();
+}
+
+bool HomeActivity::turnPage(const int dir) {
+  if (dir < 0 && pageIndex == 0) return false;
+  if (dir > 0 && pageExhausted) return false;
+  const int target = pageIndex + dir;
+  pageIndex = target;
+  pageResolved = false;
+  resolvePage();
+  return pageIndex == target;
+}
+
+void HomeActivity::swallowHeldReleases() {
+  lockNextConfirmRelease = mappedInput.isPressed(MappedInputManager::Button::Confirm);
+  lockNextBackRelease = mappedInput.isPressed(MappedInputManager::Button::Back);
+}
+
+void HomeActivity::activateMenuItem(const int menuIndex) {
+  switch (indexToMenuItem(menuIndex, hasLibrarySlot())) {
+    case HomeMenuItem::FILE_BROWSER:
+      onFileBrowserOpen();
+      break;
+    case HomeMenuItem::LIBRARY:
+      onLibraryOpen();
+      break;
+    case HomeMenuItem::OPDS_BROWSER:  // the library slot
+      hasPlugins ? onPluginsOpen() : onOpdsBrowserOpen();
+      break;
+    case HomeMenuItem::FILE_TRANSFER:
+      onFileTransferOpen();
+      break;
+    case HomeMenuItem::WIDGETS_MENU:
+      onWidgetsOpen();
+      break;
+    case HomeMenuItem::SETTINGS_MENU:
+      onSettingsOpen();
+      break;
+    default:
+      break;
+  }
+}
+
+void HomeActivity::activateFocused() {
+  if (focus == HomeBand::Filter) {
+    selectFilter(filterIndex);
+    return;
+  }
+  if (focus == HomeBand::Bottom) {
+    activateMenuItem(bottomIndex);
+    return;
+  }
+  if (bookIndex >= 0 && bookIndex < static_cast<int>(recentBooks.size())) {
+    onRecentBookSelected(recentBooks[bookIndex].path);
+  }
+}
+
+void HomeActivity::showBookOptions(const int index) {
+  if (index < 0 || index >= static_cast<int>(recentBooks.size())) return;
+  const std::string path = recentBooks[index].path;
+  const std::string title = recentBooks[index].title;
+  const bool read = READ_STORE.isRead(path);
+  const char* options[] = {tr(STR_OPEN), read ? tr(STR_MARK_AS_UNREAD) : tr(STR_MARK_AS_READ)};
+  optionPopup.show(tr(STR_LIBRARY), title.c_str(), options, 2, 0, [this, path](const int choice) {
+    swallowHeldReleases();
+    if (choice == 0) {
+      onRecentBookSelected(path);
+      return;
+    }
+    if (READ_STORE.markRead(path, !READ_STORE.isRead(path))) {
+      // The book may leave or join this filter; rescan from the first row.
+      resolvedPage = -1;
+      pageResolved = false;
+      bookIndex = 0;
+      resolvePage();
+    } else {
+      LOG_ERR("HOME", "cannot update read state for %s", path.c_str());
+    }
+  });
+  requestUpdate();
 }
 
 bool HomeActivity::storeCoverBuffer() {
@@ -335,8 +563,8 @@ void HomeActivity::loop() {
     }
   };
 
-  // Cover grid home splits navigation by button group (see below); the flat
-  // next/previous cycle is for the classic list home only.
+  // Cover grid home splits navigation by band; the flat next/previous cycle
+  // is for the classic list home only.
   if (!coverGridUi) {
     buttonNavigator.onNext([this, menuCount] {
       selectorIndex = ButtonNavigator::nextIndex(selectorIndex, menuCount);
@@ -347,6 +575,144 @@ void HomeActivity::loop() {
       selectorIndex = ButtonNavigator::previousIndex(selectorIndex, menuCount);
       requestUpdate();
     });
+  }
+
+  if (coverGridUi) {
+    if (optionPopup.handleInput(mappedInput, [this] { requestUpdate(); })) return;
+    // The release that chose a popup option must not also drive the page.
+    if (lockNextConfirmRelease && mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
+      lockNextConfirmRelease = false;
+      return;
+    }
+    if (lockNextBackRelease && mappedInput.wasReleased(MappedInputManager::Button::Back)) {
+      lockNextBackRelease = false;
+      return;
+    }
+
+    // Page resolution runs outside the render path, after the first paint.
+    if (firstRenderDone && !pageResolved) {
+      resolvePage();
+      return;
+    }
+
+    const auto gesture = coverGridUi->takeGesture(mappedInput);
+    if (gesture.kind != CoverGridHomeUi::HomeGesture::Kind::None) {
+      switch (gesture.kind) {
+        case CoverGridHomeUi::HomeGesture::Kind::Filter:
+          selectFilter(gesture.index);
+          return;
+        case CoverGridHomeUi::HomeGesture::Kind::Book:
+          if (gesture.index < 0 || gesture.index >= static_cast<int>(recentBooks.size())) return;
+          bookIndex = gesture.index;
+          focus = HomeBand::Books;
+          if (gesture.longPress) {
+            showBookOptions(gesture.index);
+            return;
+          }
+          requestUpdate();
+          onRecentBookSelected(recentBooks[gesture.index].path);
+          return;
+        case CoverGridHomeUi::HomeGesture::Kind::Bottom:
+          if (gesture.index < 0 || gesture.index >= bottomMenuCount()) return;
+          bottomIndex = gesture.index;
+          focus = HomeBand::Bottom;
+          activateMenuItem(gesture.index);
+          return;
+        case CoverGridHomeUi::HomeGesture::Kind::None:
+          break;
+      }
+    }
+
+    // Back is otherwise unused on the home menu: open the featured book (the
+    // resolved page's hero is the most recent one, as before).
+    if (mappedInput.wasReleased(MappedInputManager::Button::Back) && hasContinueReading && !recentBooks.empty()) {
+      onRecentBookSelected(recentBooks.front().path);
+      return;
+    }
+
+    // Left/Right move within the focused band. At a grid row edge the move
+    // turns the page; the filter band wraps 0..2.
+    const auto moveWithinBand = [this](const int dir) {
+      if (focus == HomeBand::Filter) {
+        filterIndex = (filterIndex + 3 + dir) % 3;
+      } else if (focus == HomeBand::Bottom) {
+        const int count = bottomMenuCount();
+        if (count > 0) bottomIndex = (bottomIndex + count + dir) % count;
+      } else {
+        const int count = static_cast<int>(recentBooks.size());
+        if (count <= 0) return;
+        const int offset = hasHero ? 1 : 0;
+        if (bookIndex < offset) return;  // the hero row has a single cell
+        const int cell = bookIndex - offset;
+        const int col = cell % CoverGridHomeUi::GRID_COLUMNS;
+        if (dir > 0) {
+          if (col + 1 < CoverGridHomeUi::GRID_COLUMNS && cell + 1 < count - offset) {
+            ++bookIndex;
+          } else if (turnPage(1)) {
+            bookIndex = hasHero ? 1 : 0;
+          }
+        } else {
+          if (col > 0) {
+            --bookIndex;
+          } else if (turnPage(-1)) {
+            // The previous page resolved; land on its last cell.
+            bookIndex =
+                static_cast<int>(recentBooks.size()) > 1 ? static_cast<int>(recentBooks.size()) - 1 : 0;
+          }
+        }
+      }
+      requestUpdate();
+    };
+
+    // Up/Down move between bands at a band edge, otherwise within the grid
+    // rows/columns.
+    const auto moveVertical = [this](const int dir) {
+      if (dir < 0) {
+        if (focus == HomeBand::Bottom) {
+          focus = recentBooks.empty() ? HomeBand::Filter : HomeBand::Books;
+        } else if (focus == HomeBand::Books) {
+          const int offset = hasHero ? 1 : 0;
+          if (bookIndex < offset || (bookIndex - offset) / CoverGridHomeUi::GRID_COLUMNS == 0) {
+            focus = HomeBand::Filter;
+          } else {
+            bookIndex -= CoverGridHomeUi::GRID_COLUMNS;
+          }
+        }
+      } else {
+        if (focus == HomeBand::Filter) {
+          focus = recentBooks.empty() ? HomeBand::Bottom : HomeBand::Books;
+        } else if (focus == HomeBand::Books) {
+          const int count = static_cast<int>(recentBooks.size());
+          const int offset = hasHero ? 1 : 0;
+          if (count <= offset) {
+            focus = HomeBand::Bottom;
+          } else if (hasHero && bookIndex < offset) {
+            bookIndex = offset;
+          } else {
+            const int cell = bookIndex - offset;
+            const int row = cell / CoverGridHomeUi::GRID_COLUMNS;
+            if (row + 1 < rowsForPage() && cell + CoverGridHomeUi::GRID_COLUMNS < count - offset) {
+              bookIndex += CoverGridHomeUi::GRID_COLUMNS;
+            } else {
+              focus = HomeBand::Bottom;
+            }
+          }
+        }
+      }
+      requestUpdate();
+    };
+
+    buttonNavigator.onPressAndContinuous({MappedInputManager::Button::Left},
+                                         [&moveWithinBand] { moveWithinBand(-1); });
+    buttonNavigator.onPressAndContinuous({MappedInputManager::Button::Right},
+                                         [&moveWithinBand] { moveWithinBand(1); });
+    buttonNavigator.onPressAndContinuous({MappedInputManager::Button::Up}, [&moveVertical] { moveVertical(-1); });
+    buttonNavigator.onPressAndContinuous({MappedInputManager::Button::Down}, [&moveVertical] { moveVertical(1); });
+
+    if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
+      activateFocused();
+    }
+    return;
   }
 
   const auto swipe = mappedInput.wasSwipe();
@@ -366,47 +732,6 @@ void HomeActivity::loop() {
   // files missing from the SD card).
   if (mappedInput.wasReleased(MappedInputManager::Button::Back) && hasContinueReading && !recentBooks.empty()) {
     onRecentBookSelected(recentBooks[0].path);
-    return;
-  }
-
-  if (coverGridUi) {
-    const int touched = coverGridUi->selectedAction(mappedInput);
-    if (touched >= 0 && touched < menuCount) {
-      selectorIndex = touched;
-      activateSelection();
-      return;
-    }
-    if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
-      activateSelection();
-      return;
-    }
-    // Side page buttons walk the covers, front Left/Right walk the tabs
-    // (selectorIndex is flat: books first, then the tab items). A press while
-    // selection sits in the other band jumps into this band first.
-    const int bookCount = static_cast<int>(recentBooks.size());
-    const auto cycleBand = [this](const int base, const int count, const int dir) {
-      if (count <= 0) return;
-      int idx = selectorIndex - base;
-      if (idx < 0 || idx >= count) {
-        idx = dir > 0 ? 0 : count - 1;
-      } else {
-        idx = (idx + count + dir) % count;
-      }
-      selectorIndex = base + idx;
-      requestUpdate();
-    };
-    buttonNavigator.onPressAndContinuous({MappedInputManager::Button::Up},
-                                         [&cycleBand, bookCount] { cycleBand(0, bookCount, -1); });
-    buttonNavigator.onPressAndContinuous({MappedInputManager::Button::Down},
-                                         [&cycleBand, bookCount] { cycleBand(0, bookCount, +1); });
-    buttonNavigator.onPressAndContinuous({MappedInputManager::Button::Left}, [this, &cycleBand] {
-      const int bookCount = static_cast<int>(recentBooks.size());
-      cycleBand(bookCount, getMenuItemCount() - bookCount, -1);
-    });
-    buttonNavigator.onPressAndContinuous({MappedInputManager::Button::Right}, [this, &cycleBand] {
-      const int bookCount = static_cast<int>(recentBooks.size());
-      cycleBand(bookCount, getMenuItemCount() - bookCount, +1);
-    });
     return;
   }
 
@@ -467,6 +792,10 @@ void HomeActivity::loop() {
 }
 
 void HomeActivity::render(RenderLock&&) {
+  // Modal option popup draws over the previous frame (same plumbing as the
+  // file browser), so it must run before clearScreen().
+  if (optionPopup.processRender(renderer, mappedInput)) return;
+
   const auto& metrics = UITheme::getInstance().getMetrics();
   const auto pageWidth = renderer.getScreenWidth();
   const auto pageHeight = renderer.getScreenHeight();
@@ -476,15 +805,16 @@ void HomeActivity::render(RenderLock&&) {
 
   renderer.clearScreen();
   if (coverGridUi) {
-    coverGridUi->setSelection(selectorIndex);
+    coverGridUi->setSelection(static_cast<int>(filter), filterIndex, bookIndex, bottomIndex,
+                              static_cast<int>(focus), hasHero, pageResolved);
     UITheme::getInstance().drawCoverGridHome(*coverGridUi);
-    // Front Left/Right walk the tabs, so their hints read Left/Right; the
-    // side page buttons (unhinted) walk the covers.
+    // Up/Down move between bands, Left/Right within the focused band.
     const auto labels = mappedInput.mapLabels(hasContinueReading ? tr(STR_RESUME) : "", tr(STR_SELECT),
-                                              tr(STR_DIR_LEFT), tr(STR_DIR_RIGHT));
+                                              tr(STR_DIR_UP), tr(STR_DIR_DOWN));
     GUI.drawButtonHints(renderer, labels.btn1, labels.btn2, labels.btn3, labels.btn4);
-    renderer.displayBuffer(cleanInitialRefresh && !firstRenderDone ? HalDisplay::HALF_REFRESH
-                                                                   : HalDisplay::FAST_REFRESH);
+    const bool firstFrame = cleanInitialRefresh && !firstRenderDone;
+    renderer.displayBuffer(firstFrame || halfRepaintPending ? HalDisplay::HALF_REFRESH : HalDisplay::FAST_REFRESH);
+    halfRepaintPending = false;
     // Slot heights are recorded during the draw above; a change (first layout
     // pass, orientation switch) means the paths must point at those sizes and
     // any missing thumbs must be generated. Refreshing the paths right away
@@ -500,6 +830,7 @@ void HomeActivity::render(RenderLock&&) {
     } else if (!recentsLoaded && !recentsLoading) {
       loadRecentCovers(CoverGridHomeUi::THUMB_HEIGHT);
       coverGridUi->refreshCoverPaths();
+      halfRepaintPending = true;
       requestUpdate();
     }
     return;

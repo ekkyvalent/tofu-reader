@@ -1,4 +1,5 @@
 #pragma once
+#include <cstdint>
 #include <functional>
 #include <vector>
 
@@ -6,17 +7,32 @@
 #include "RecentBooksStore.h"
 #include "activities/Activity.h"
 #include "components/CoverGridHomeUi.h"
+#include "components/OptionPopup.h"
 #include "util/ButtonNavigator.h"
 
 struct Rect;
 
 class HomeActivity final : public Activity {
+ public:
+  // Cover Grid home filters and focus bands.
+  enum class HomeFilter : uint8_t { Home, Archived, All };
+  enum class HomeBand : uint8_t { Filter, Books, Bottom };
+
+ private:
+  // Grid cells per page: the hero page carries the hero plus six cells,
+  // every later page carries nine.
+  static constexpr int kHomeHeroPage = 6;
+  static constexpr int kGridPage = 9;
+
   std::unique_ptr<CoverGridHomeUi> coverGridUi;
   ButtonNavigator buttonNavigator;
   int selectorIndex = 0;
   bool recentsLoading = false;
   bool recentsLoaded = false;
   bool firstRenderDone = false;
+  // Set when the resolved page is replaced wholesale: a fast partial waveform
+  // would leave the previous page's covers behind.
+  bool halfRepaintPending = false;
   bool hasOpdsServers = false;
   bool hasPlugins = false;
   // The home "library" slot (index 2) shows Plugins when any plugin is
@@ -37,6 +53,24 @@ class HomeActivity final : public Activity {
   std::vector<RecentBook> recentBooks;
   const HomeMenuItem initialMenuItem;
   const bool cleanInitialRefresh;
+
+  // Cover Grid home page state. The resolved page lives in recentBooks so the
+  // cover pipeline and loadGridCover() keep working unchanged.
+  HomeFilter filter = HomeFilter::Home;
+  HomeBand focus = HomeBand::Books;
+  int filterIndex = 0;
+  int bookIndex = 0;  // index into the resolved page, 0 = hero when there is one
+  int bottomIndex = 0;
+  int pageIndex = 0;
+  bool hasHero = false;
+  bool pageExhausted = false;
+  uint16_t pageCursor = 0;
+  bool pageResolved = false;
+  HomeFilter resolvedFilter = HomeFilter::Home;
+  int resolvedPage = -1;
+  OptionPopup optionPopup;
+  bool lockNextConfirmRelease = false;
+  bool lockNextBackRelease = false;
 
   // Convert HomeMenuItem to menu index (used in onEnter)
   static int menuItemToIndex(HomeMenuItem item, bool hasOpdsUrl) {
@@ -76,14 +110,25 @@ class HomeActivity final : public Activity {
   void onPluginsOpen();
 
   int getMenuItemCount() const;
+  int bottomMenuCount() const;
+  void activateMenuItem(int menuIndex);
   bool storeCoverBuffer();    // Store frame buffer for cover image
   bool restoreCoverBuffer();  // Restore frame buffer from stored cover
   void freeCoverBuffer();     // Free the stored cover buffer
   void loadRecentBooks(int maxBooks);
   void loadRecentCovers(int coverHeight);
-  void fillCoverGridFromLibrary();
   void resolveGridCoverPaths();
   void loadGridCover(RecentBook& book, int height, bool& showingLoading, Rect& popupRect);
+
+  // Cover Grid home page resolution and navigation.
+  int rowsForPage() const;
+  int pageSizeFor(int page) const;
+  void resolvePage();
+  void selectFilter(int index);
+  bool turnPage(int dir);
+  void showBookOptions(int index);
+  void swallowHeldReleases();
+  void activateFocused();
 
  public:
   explicit HomeActivity(GfxRenderer& renderer, MappedInputManager& mappedInput,
