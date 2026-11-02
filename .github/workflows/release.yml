@@ -133,6 +133,12 @@ jobs:
     permissions:
       contents: write
     steps:
+      # The gate below runs a script from the tree, and this job otherwise only
+      # has the downloaded artifacts, so the checkout is required.
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.release.tag_name }}
+
       - name: Download firmware assets
         uses: actions/download-artifact@v4
         with:
