@@ -53,6 +53,13 @@ ReadStore& ReadStore::getInstance() {
   return instance;
 }
 
+#ifdef CROSSPOINT_UNIT_TESTS
+void ReadStore::resetForTests() {
+  hashes.clear();
+  loaded = false;
+}
+#endif
+
 void ReadStore::ensureLoaded() {
   if (loaded) return;
   loaded = true;

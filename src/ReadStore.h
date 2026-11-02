@@ -22,6 +22,11 @@ class ReadStore {
   bool rekey(const std::string& oldPath, const std::string& newPath);
   bool erase(const std::string& path);
 
+#ifdef CROSSPOINT_UNIT_TESTS
+  // Test-only: drop the in-memory copy so the next query re-reads the file.
+  void resetForTests();
+#endif
+
  private:
   ReadStore() = default;
 

@@ -87,6 +87,7 @@ add_subdirectory(clipping_preview)
 add_subdirectory(glyph_bitmap)
 
 add_subdirectory(clipping_store)
+add_subdirectory(read_store)
 add_subdirectory(reader_session)
 add_subdirectory(plugin_manifest_classification)
 add_subdirectory(plugin_picker_layout)
