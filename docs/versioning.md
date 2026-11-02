@@ -139,6 +139,11 @@ version always comes from `VERSION` plus the bump rules above, never from
 The device looks for `tofu-reader-<tag_name verbatim>-<device>.bin`, with
 `-x3-x4` for the combined x3/x4 image.
 
+This fork supports only the Xteink X4 Pro (see the README). The release job
+therefore builds only the `x4pro` image, and `scripts/check_release_assets.py`
+requires exactly that one asset and nothing else. Adding a board means changing
+the release matrix, `DEVICES` in that script, and the README together.
+
 CI (`.github/workflows/release.yml`) and `scripts/package-release.sh` both
 produce that name, and `scripts/check_release_assets.py` gates it in the release
 job. Releases whose assets fail the gate are invisible to OTA.

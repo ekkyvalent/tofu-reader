@@ -88,7 +88,8 @@ stuck with no recovery path.
 
 ### 1. Update from the SD card (normal path)
 
-1. Download `tofu-reader-v1.2.0-x4pro.bin` from [Releases](../../releases).
+1. Download `tofu-reader-v<version>-x4pro.bin` from [Releases](../../releases), taking `<version>`
+   from the release title.
 2. Copy it anywhere on the SD card.
 3. On the device open **Settings > SD Card Firmware Update**, pick the file, confirm.
 4. The image is written to the inactive slot and the device reboots into it. The previous image stays
@@ -96,11 +97,12 @@ stuck with no recovery path.
 
 ### 2. Full flash (fresh device, or one that will not boot)
 
-Download `tofu-reader-v1.2.0-x4pro-factory.bin` and write it at offset `0x0`:
+Download `tofu-reader-v<version>-x4pro-factory.bin` (same version as above) and write it at offset
+`0x0`:
 
 ```bash
 esptool.py --chip esp32s3 --port /dev/ttyACM0 --baud 921600 \
-  write_flash 0x0 tofu-reader-v1.2.0-x4pro-factory.bin
+  write_flash 0x0 tofu-reader-v<version>-x4pro-factory.bin
 ```
 
 That file is a complete flash image: bootloader at `0x0`, partition table at `0x8000`, application at

@@ -11,15 +11,10 @@ import re
 import sys
 from pathlib import Path
 
+# This fork's supported boards. It must match the release matrix in
+# .github/workflows/release.yml.
 DEVICES = [
-    "x3-x4",
-    "sticky",
     "x4pro",
-    "x4c",
-    "papermono",
-    "metalio_eink4",
-    "eego_a4",
-    "picco",
 ]
 
 TAG_RE = re.compile(r"^v?\d+\.\d+\.\d+(rc)?$")

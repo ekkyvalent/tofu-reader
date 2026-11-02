@@ -17,32 +17,14 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
+      # This fork supports only the Xteink X4 Pro (see README). Upstream's other
+      # boards are deliberately not built here: publishing them would offer OTA
+      # images to devices this fork does not support.
       matrix:
         include:
-          - release_env: gh_release
-            rc_env: gh_release_rc
-            device: x3-x4
-          - release_env: sticky-gh_release
-            rc_env: sticky-gh_release_rc
-            device: sticky
           - release_env: x4pro-gh_release
             rc_env: x4pro-gh_release_rc
             device: x4pro
-          - release_env: x4c-gh_release
-            rc_env: x4c-gh_release_rc
-            device: x4c
-          - release_env: papermono-gh_release
-            rc_env: papermono-gh_release_rc
-            device: papermono
-          - release_env: metalio_eink4-gh_release
-            rc_env: metalio_eink4-gh_release_rc
-            device: metalio_eink4
-          - release_env: eego_a4-gh_release
-            rc_env: eego_a4-gh_release_rc
-            device: eego_a4
-          - release_env: picco-gh_release
-            rc_env: picco-gh_release_rc
-            device: picco
     steps:
       - uses: actions/checkout@v6
         with:
@@ -156,9 +138,9 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
-          for device in x3-x4 sticky x4pro x4c papermono metalio_eink4 eego_a4 picco; do
+          for device in x4pro; do
             test -f "dist/tofu-reader-${RELEASE_TAG}-${device}.bin"
           done
-          test "$(find dist -maxdepth 1 -type f -name 'tofu-reader-*.bin' | wc -l)" -eq 8
+          test "$(find dist -maxdepth 1 -type f -name 'tofu-reader-*.bin' | wc -l)" -eq 1
           gh release upload "$RELEASE_TAG" dist/tofu-reader-*.bin \
             --repo "$GITHUB_REPOSITORY" --clobber
