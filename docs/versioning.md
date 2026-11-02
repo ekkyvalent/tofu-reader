@@ -143,9 +143,12 @@ CI (`.github/workflows/release.yml`) and `scripts/package-release.sh` both
 produce that name, and `scripts/check_release_assets.py` gates it in the release
 job. Releases whose assets fail the gate are invisible to OTA.
 
-Upstream `crosspoint-*` releases must stay marked prerelease, because
-`releases/latest` returns the most recent non-prerelease and a Tofu device must
-never be offered upstream firmware.
+Assets named `crosspoint-*` are legacy: the release workflow produced them
+before this contract was fixed, and `OtaUpdater` never asks for that name. They
+can stay attached to old releases for humans, but the asset a tag needs for OTA
+is `tofu-reader-<tag>-<device>.bin` for every device, not just the one image
+that was packaged by hand. Upstream CrossPoint publishes its releases from its
+own repository, so they cannot show up in this repository's `releases/latest`.
 
 ## Do not
 
