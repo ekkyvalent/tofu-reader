@@ -1,10 +1,11 @@
 # Tofu Reader
 
 A fork of [CrossPoint Reader](https://github.com/crosspoint-reader/crosspoint-reader) for the **Xteink
-X4 Pro**, with a short list of additions on top: frontlight presets you can cycle with a double tap,
-four sleep screen widgets, and a todo list you can reorder from the shelf.
+X4 Pro**, with a short list of additions on top: a tab-based home screen backed by real read state,
+frontlight presets you can cycle with a double tap, four sleep screen widgets, and a todo list you can
+reorder from the shelf.
 
-Tofu Reader 1.2.0 is based on CrossPoint `develop`, upstream commit `9ba67ea5`.
+Tofu Reader 1.3.0 is based on CrossPoint `develop`, upstream commit `9ba67ea5`.
 
 > **Xteink X4 Pro only.** These builds target the `x4pro` PlatformIO environment (ESP32-S3). Do not
 > flash them on an X3, X4, or Picco. CrossPoint covers those devices, this fork does not.
@@ -13,6 +14,32 @@ Tofu Reader 1.2.0 is based on CrossPoint `develop`, upstream commit `9ba67ea5`.
 > belong in [upstream's tracker](https://github.com/crosspoint-reader/crosspoint-reader/issues).
 
 ## What this fork adds
+
+### Tab-based home screen
+
+The cover-grid home (**Settings > Display > UI Theme > Cover Grid**) has three tabs:
+
+- **HOME** shows the book you were last reading as a hero card with its progress, then the rest of the
+  library in two rows.
+- **ARCHIVED** collects everything finished or marked read, three rows of nine covers.
+- **ALL** shows the whole library, with finished books carrying a horizontal READ band across the
+  cover.
+
+Each tab keeps its own paging cursor, and an empty tab says why it is empty instead of drawing a blank
+page. The other four home themes are untouched: they render one to three large covers each, which is
+why the tabs live in the grid theme only.
+
+### Read state that survives
+
+Until 1.3.0 the only signal that a book was finished was how far you had paged into it, so reopening a
+finished title reset it, and the only way to record a DNF was to move the file into `/read` by hand.
+
+- **Mark as read** and **Mark as unread** in the library long-press menu.
+- A book is marked read automatically when you reach the end of it.
+- The state lives in `/.crosspoint/read.bin`, keyed by the book path, so it survives reboots, library
+  rebuilds and renames made in the file browser.
+- Books that already sit in the `/read` folder still count as read. The setting that moved finished
+  books there is gone, and nothing is moved for you any more.
 
 ### Frontlight presets you can cycle
 
@@ -126,6 +153,7 @@ the FreeInk SDK submodule, so the first build takes a while.
 | Path | Contents |
 | --- | --- |
 | `/.crosspoint/settings.json` | Device settings, same format as CrossPoint plus the fork's preset and widget keys |
+| `/.crosspoint/read.bin` | Read and DNF state: magic `RDB1`, version, then sorted 8-byte path hashes |
 | `/.crosspoint/todos.json` | Todo list for the sleep screen widget, in display order |
 | `/.crosspoint/state.json` | Resume and runtime state |
 
@@ -140,7 +168,7 @@ first boot of the preset feature: a saved `ToggleFrontlight` Home button action 
 
 `VERSION` at the repo root is the source of truth, and it must agree with the `version =` line in
 `platformio.ini`: the release workflow rejects a tag that disagrees with it, so the two are bumped
-together. The target is appended to the version, so the firmware reports `1.2.0-x4pro` in
+together. The target is appended to the version, so the firmware reports `<version>-x4pro` in
 **Settings > About** and in its HTTP user agent.
 
 Bumps follow the rule in [docs/versioning.md](./docs/versioning.md): `x.x.1` for a fix, `x.1.x` for a
@@ -148,9 +176,12 @@ new feature, `1.x.x` for a breaking change. `python3 scripts/bump_version.py min
 files, all-or-nothing, and prints the git commands that cut the release.
 
 **Settings > Check for updates** reads the latest release published in this repository, not from
-upstream, so a device running Tofu Reader is never pulled onto a CrossPoint build. The updater matches
-an asset named `tofu-reader-v<tag>-x4pro.bin`, which is what `scripts/package-release.sh` produces;
-a release packaged any other way is invisible to it.
+upstream, so a device running Tofu Reader is never pulled onto a CrossPoint build. The updater asks for
+an asset named `tofu-reader-<tag>-x4pro.bin`, with the tag interpolated exactly as published. Both
+`scripts/package-release.sh` and the release workflow produce that name, and the workflow runs
+`scripts/check_release_assets.py` before uploading, so a release whose asset is named anything else
+fails instead of shipping something the device cannot find. Only the `x4pro` image is built: this fork
+does not publish firmware for the boards CrossPoint supports.
 
 ## Following upstream
 
@@ -175,6 +206,11 @@ this repository.
 ./bin/clang-format-fix
 pio check -e x4pro
 pio run -e x4pro
+
+# host unit tests (no device needed)
+cmake -S test -B build/test -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build/test -j8
+ctest --test-dir build/test --output-on-failure -j8
 ```
 
 Serial logs: `python3 scripts/debugging_monitor.py`.
@@ -217,13 +253,14 @@ Open Font License 1.1, with the license text beside each family in
 wolfSSL is the one copyleft dependency that matters when redistributing: the full source ships in this
 tree, and a binary built from it carries GPL-2.0 obligations.
 
-**Fork changes.** Frontlight preset cycling, the sleep screen widgets, the todo store and the rebrand
-are Copyright (c) 2026 Ekky Pramana, released under the same MIT terms. See `NOTICE` for the fork's
-disclaimers. `LICENSE` is upstream's and is unchanged.
+**Fork changes.** The cover-grid home screen with its tabs and read bands, the read/DNF store, the
+update check diagnostics, frontlight preset cycling, the sleep screen widgets, the todo store and the
+rebrand are Copyright (c) 2026 Ekky Pramana, released under the same MIT terms. See `NOTICE` for the
+fork's disclaimers. `LICENSE` is upstream's and is unchanged.
 
 ## Issues
 
-Issues are open. Bugs in the two features above, or in the `x4pro` build, belong here. Reader engine
+Issues are open. Bugs in the features above, or in the `x4pro` build, belong here. Reader engine
 bugs that also reproduce on upstream builds belong in
 [upstream's tracker](https://github.com/crosspoint-reader/crosspoint-reader/issues).
 
