@@ -6,6 +6,7 @@
 // the local header last and break the build.
 #include "OtaVersionCompare.h"
 #include "HttpDownloader.h"
+#include <Arduino.h>
 #include <Logging.h>
 #include <Memory.h>
 #include <ReleaseJsonParser.h>
@@ -49,22 +50,40 @@ OtaUpdater::OtaUpdaterError OtaUpdater::checkForUpdate() {
   }
   char assetName[48] = {};
   bool assetNameSet = false;
-  const bool ok = HttpDownloader::fetchUrl(latestReleaseUrl, [&](const uint8_t* data, size_t len) {
-    size_t offset = 0;
-    while (!assetNameSet && offset < len) {
-      releaseParser.feed(reinterpret_cast<const char*>(data + offset), 1);
-      offset++;
-      if (releaseParser.foundTag()) {
-        snprintf(assetName, sizeof(assetName), "tofu-reader-%s%s.bin", releaseParser.getTagName(), assetSuffix);
-        releaseParser.setFirmwareAssetName(assetName);
-        assetNameSet = true;
+  auto fetchRelease = [&]() {
+    return HttpDownloader::fetchUrl(latestReleaseUrl, [&](const uint8_t* data, size_t len) {
+      size_t offset = 0;
+      while (!assetNameSet && offset < len) {
+        releaseParser.feed(reinterpret_cast<const char*>(data + offset), 1);
+        offset++;
+        if (releaseParser.foundTag()) {
+          snprintf(assetName, sizeof(assetName), "tofu-reader-%s%s.bin", releaseParser.getTagName(), assetSuffix);
+          releaseParser.setFirmwareAssetName(assetName);
+          assetNameSet = true;
+        }
       }
-    }
-    if (offset < len) releaseParser.feed(reinterpret_cast<const char*>(data + offset), len - offset);
-    return true;
-  });
+      if (offset < len) releaseParser.feed(reinterpret_cast<const char*>(data + offset), len - offset);
+      return true;
+    });
+  };
+  bool ok = fetchRelease();
+  lastHttpStatus = HttpDownloader::lastStatus();
+  if (!ok && lastHttpStatus == 0) {
+    LOG_ERR("OTA", "Release check got no response, retrying");
+    // A resume attempt can fail at the transport layer after part of the body
+    // was already fed, so reset the parser before re-feeding from byte 0. The
+    // asset name and its "already set" flag must be cleared with it, or the
+    // retry would never call setFirmwareAssetName() a second time and would end
+    // up reporting NO_UPDATE instead of the real result.
+    assetNameSet = false;
+    assetName[0] = '\0';
+    releaseParser.reset();
+    delay(800);
+    ok = fetchRelease();
+    lastHttpStatus = HttpDownloader::lastStatus();
+  }
   if (!ok) {
-    LOG_ERR("OTA", "Release check fetch failed");
+    LOG_ERR("OTA", "Release check fetch failed (HTTP status %d)", lastHttpStatus);
     return HTTP_ERROR;
   }
 

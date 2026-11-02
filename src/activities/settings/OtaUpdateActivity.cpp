@@ -1,5 +1,7 @@
 #include "OtaUpdateActivity.h"
 
+#include <cstdio>
+
 #include <GfxRenderer.h>
 #include <I18n.h>
 #include <WiFi.h>
@@ -22,6 +24,8 @@ void OtaUpdateActivity::onWifiSelectionComplete(const bool success) {
 
   {
     RenderLock lock(*this);
+    failedDetail = nullptr;
+    failedDetailBuf[0] = '\0';
     state = CHECKING_FOR_UPDATE;
   }
   requestUpdateAndWait();
@@ -41,6 +45,21 @@ void OtaUpdateActivity::onWifiSelectionComplete(const bool success) {
     LOG_DBG("OTA", "Update check failed: %d", res);
     {
       RenderLock lock(*this);
+      const int status = updater.getLastHttpStatus();
+      if (res == OtaUpdater::HTTP_ERROR) {
+        if (status == 0) {
+          failedDetail = tr(STR_OTA_ERR_NETWORK);
+        } else if (status == 403 || status == 429) {
+          failedDetail = tr(STR_OTA_ERR_RATE_LIMIT);
+        } else {
+          snprintf(failedDetailBuf, sizeof failedDetailBuf, "HTTP %d", status);
+          failedDetail = failedDetailBuf;
+        }
+      } else if (res == OtaUpdater::JSON_PARSE_ERROR) {
+        failedDetail = tr(STR_OTA_ERR_DATA);
+      } else if (res == OtaUpdater::OOM_ERROR) {
+        failedDetail = tr(STR_OTA_ERR_MEMORY);
+      }
       state = FAILED;
     }
     return;
