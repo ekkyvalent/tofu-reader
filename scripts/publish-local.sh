@@ -122,6 +122,18 @@ else
   DIRTY="false"
 fi
 
+# A dirty tree keeps `git describe --dirty` pinned to the same string, so every
+# rebuild would publish under identical filenames and the page could not tell
+# two builds apart. Suffix the label with the first 8 hex of the binary's own
+# sha256: it changes whenever the build changes, it matches the manifest's
+# sha256 prefix, and it keeps the older-builds history accumulating.
+if [[ "$DIRTY" == "true" ]]; then
+  build_fp="$(sha256sum -- "$APP_SRC" 2>/dev/null | cut -c1-8)"
+  if [[ -n "$build_fp" ]]; then
+    VERSION="${VERSION}+b${build_fp}"
+  fi
+fi
+
 INDEX_SRC="$REPO_ROOT/web/download/index.html"
 if [[ ! -f "$INDEX_SRC" ]]; then
   echo "error: missing page source: $INDEX_SRC" >&2
