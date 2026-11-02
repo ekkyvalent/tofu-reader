@@ -122,7 +122,7 @@ value equal to `VERSION`; the CI envs take `CROSSPOINT_VERSION` from
 | Local download page | `scripts/publish-local.sh` | Consumes `version.py` (line 113) and publishes `tofu-reader-<version>-<env>-<role>.bin` plus `manifest.json`. |
 | Release assets | `scripts/package-release.sh` | Consumes `version.py` (line 54) and writes `dist/tofu-reader-v<version>-<env>.bin` and `dist/tofu-reader-v<version>-<env>-factory.bin` (lines 80-81). |
 | On-device OTA | `src/network/OtaUpdater.cpp:57` | Requests `tofu-reader-<tag_name><boardSuffix>.bin`. A tag `v1.0.0` on an x4pro means `tofu-reader-v1.0.0-x4pro.bin`; X3/X4 use the shared `-x3-x4` image (lines 43-48). |
-| CI assets | `.github/workflows/release.yml:116` | Names assets `crosspoint-<version>-<device>.bin`. This prefix does not match OTA; see below. |
+| CI assets | `.github/workflows/release.yml` | Names assets `tofu-reader-<tag>-<device>.bin`, with the tag interpolated verbatim, and gates them with `scripts/check_release_assets.py` before upload. |
 
 ## Inherited upstream tags
 
@@ -134,25 +134,28 @@ Because it is an ancestor of the current tree, `git describe --tags` may report
 version always comes from `VERSION` plus the bump rules above, never from
 `git describe` or the newest `v*` tag.
 
-## Known gap: CI asset names
+## OTA asset naming
 
-`.github/workflows/release.yml:116` copies the build to
-`crosspoint-${version}-${{ matrix.device }}.bin`, and the upload step at lines
-148-153 expects that same `crosspoint-` prefix. `OtaUpdater::checkForUpdate()`
-composes `tofu-reader-<tag_name><boardSuffix>.bin` (`src/network/OtaUpdater.cpp:57`),
-so on-device OTA cannot find a CI-built asset. Releases packaged with
-`scripts/package-release.sh` are the ones OTA can find. The workflow is left as is;
-this document does not change it.
+The device looks for `tofu-reader-<tag_name verbatim>-<device>.bin`, with
+`-x3-x4` for the combined x3/x4 image.
+
+CI (`.github/workflows/release.yml`) and `scripts/package-release.sh` both
+produce that name, and `scripts/check_release_assets.py` gates it in the release
+job. Releases whose assets fail the gate are invisible to OTA.
+
+Upstream `crosspoint-*` releases must stay marked prerelease, because
+`releases/latest` returns the most recent non-prerelease and a Tofu device must
+never be offered upstream firmware.
 
 ## Do not
 
+- Never publish a release whose assets fail `scripts/check_release_assets.py`.
+  A wrong prefix (`crosspoint-*`) or a stripped `v` makes the build invisible to
+  the updater, and the device reports "no update" rather than an error.
 - Never hand-edit a tag. Re-tag only by moving the tag deliberately and
   re-pushing; a mismatched tag produces assets OTA will not match.
 - Never bump `VERSION` in the same commit as the feature. The release commit
   contains the version line only, so the code under the tag is exactly the code
   that was tested.
-- Never publish a release whose assets were not named by `package-release.sh`.
-  `crosspoint-*` binaries, or any name without the `v` prefix, are invisible to
-  the updater.
 - Do not derive the next version from `git describe` or the newest `v*` tag.
   Inherited upstream tags such as `v1.5.0` are not Tofu Reader releases.

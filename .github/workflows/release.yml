@@ -1,7 +1,9 @@
 name: Compile Release
 
 # Build and attach firmware only after a release is published. The release tag
-# supplies both the source revision and the version in each asset name.
+# supplies the source revision and is interpolated verbatim into every asset name
+# because the on-device updater builds the name from the release tag; stripping
+# the "v" makes the build invisible to OTA.
 
 on:
   release:
@@ -112,8 +114,7 @@ jobs:
           PIO_ENV: ${{ github.event.release.prerelease && matrix.rc_env || matrix.release_env }}
           RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
-          version="${RELEASE_TAG#v}"
-          asset="crosspoint-${version}-${{ matrix.device }}.bin"
+          asset="tofu-reader-${RELEASE_TAG}-${{ matrix.device }}.bin"
           cp ".pio/build/${PIO_ENV}/firmware.bin" "$asset"
           echo "name=$asset" >> "$GITHUB_OUTPUT"
 
@@ -136,18 +137,22 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: dist
-          pattern: crosspoint-*.bin
+          pattern: tofu-reader-*.bin
           merge-multiple: true
+
+      - name: Verify OTA asset names
+        run: python3 scripts/check_release_assets.py --tag "$RELEASE_TAG" dist
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
 
       - name: Attach firmware assets
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
-          version="${RELEASE_TAG#v}"
           for device in x3-x4 sticky x4pro x4c papermono metalio_eink4 eego_a4 picco; do
-            test -f "dist/crosspoint-${version}-${device}.bin"
+            test -f "dist/tofu-reader-${RELEASE_TAG}-${device}.bin"
           done
-          test "$(find dist -maxdepth 1 -type f -name 'crosspoint-*.bin' | wc -l)" -eq 8
-          gh release upload "$RELEASE_TAG" dist/crosspoint-*.bin \
+          test "$(find dist -maxdepth 1 -type f -name 'tofu-reader-*.bin' | wc -l)" -eq 8
+          gh release upload "$RELEASE_TAG" dist/tofu-reader-*.bin \
             --repo "$GITHUB_REPOSITORY" --clobber
