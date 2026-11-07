@@ -121,6 +121,10 @@ Three gestures are handled once, for every screen. Activities must not add their
 
 Because the back gesture arrives as `Button::Back`, most button-era activities gain back-swipe support with zero changes.
 
+One deliberate screen-specific exception: the cover-grid home reads `wasBackGesture()` to treat the
+Back edge swipe as previous page on pages after the first. It does not reimplement the edge test, and
+the HOME tab's first page still keeps Back's featured-book action.
+
 ---
 
 ## Legacy bridge helpers (do not use in new code)
@@ -131,7 +135,7 @@ Because the back gesture arrives as `Button::Back`, most button-era activities g
 |---|---|
 | `wasScreenTapped` / `wasScreenTouchDown` / `isScreenTouchHeld` | Consumed by the FUI snapshot builder. Direct use only in the two legacy surfaces |
 | `rowTouch` / `colTouch` | Legacy row/column band math. Sole remaining user: `HomeActivity` (theme-driven layout) |
-| `wasSwipe()` | Raw swipe direction, for behavior beyond the global gestures (reader page turns) |
+| `wasSwipe()` | Raw swipe direction, for behavior beyond the global gestures (reader page turns, cover-grid paging) |
 | `hasTouch()` | Still fine anywhere: gate touch-only chrome (on-screen Cancel/OK pairs) on it |
 
 The `wasListItemTapped` / `wasListItemTouchedDown` helpers from the button-era bridge have been removed; every themed list is a `UiListActivity` now. If you are porting a branch that still calls them, convert the screen to `UiListActivity` rather than resurrecting the helpers.

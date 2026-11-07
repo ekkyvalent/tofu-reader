@@ -623,6 +623,27 @@ void HomeActivity::loop() {
       }
     }
 
+    // Horizontal swipes turn the page. Boards with touch may also lack
+    // Left/Right keys (the X4 Pro's two keys are Up/Down), so this is the only
+    // way past the first page there. Swipe left advances, swipe right goes
+    // back. A right swipe from the left edge is the global Back gesture; on
+    // pages after the first it means previous page, while the HOME tab's first
+    // page keeps Back's featured-book action.
+    const auto swipe = mappedInput.wasSwipe();
+    const bool horizontal = swipe == MappedInputManager::SwipeDir::Left || swipe == MappedInputManager::SwipeDir::Right;
+    if (horizontal && !(mappedInput.wasBackGesture() && pageIndex == 0)) {
+      const int dir = swipe == MappedInputManager::SwipeDir::Left ? 1 : -1;
+      if (turnPage(dir)) {
+        focus = HomeBand::Books;
+        const int last = static_cast<int>(recentBooks.size()) - 1;
+        // Land on the first cell of the next page, or the last cell of the
+        // previous one, so the button cursor stays on the grid.
+        bookIndex = dir > 0 ? (hasHero ? 1 : 0) : (last > 0 ? last : 0);
+        requestUpdate();
+      }
+      return;
+    }
+
     // Back is otherwise unused on the home menu: open the featured book (the
     // resolved page's hero is the most recent one, as before).
     if (mappedInput.wasReleased(MappedInputManager::Button::Back) && hasContinueReading && !recentBooks.empty()) {

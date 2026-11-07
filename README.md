@@ -25,9 +25,10 @@ The cover-grid home (**Settings > Display > UI Theme > Cover Grid**) has three t
 - **ALL** shows the whole library, with finished books carrying a horizontal READ band across the
   cover.
 
-Each tab keeps its own paging cursor, and an empty tab says why it is empty instead of drawing a blank
-page. The other four home themes are untouched: they render one to three large covers each, which is
-why the tabs live in the grid theme only.
+Paging is per tab: swipe left or right across the grid to move between pages. Switching tabs starts
+that tab at its first page, and an empty tab says why it is empty instead of drawing a blank page. The
+other four home themes are untouched: they render one to three large covers each, which is why the
+tabs live in the grid theme only.
 
 ### Read state that survives
 

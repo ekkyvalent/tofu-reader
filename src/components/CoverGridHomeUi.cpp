@@ -77,8 +77,8 @@ bool CoverGridHomeUi::takeThumbHeightChanged() { return std::exchange(thumbHeigh
 void CoverGridHomeUi::noteThumbHeight(int slotHeight) {
   // One shared height for every slot (hero and grid covers are the same
   // size). The +8 surplus gives the paint clip a little bleed so the art's
-  // rightward nudge never exposes the left edge; covers narrower than the
-  // 2:3 slot may show a thin sliver at the sides rather than being cropped.
+  // rightward nudge never exposes the left edge. The grid asks for the same
+  // 0.6 width/height ratio, so 3:5 art lands in the slot without side slivers.
   const int height = std::max(1, slotHeight + 8);
   if (thumbHeight != height) {
     thumbHeight = height;
@@ -207,12 +207,14 @@ void CoverGridHomeUi::draw(UiScreen& screen) {
   const int rows = hasHero ? 2 : 3;
   const int chromeGaps = (rows - 1) * rowGap + (hasHero ? theme.spaceSm : 0);
   const int maxCoverWidth = body.width / GRID_COLUMNS - 2 * COVER_CELL_INSET;
-  // Fit the shared 2:3 cover box within both the row and a grid column. No
+  // Fit the shared 3:5 cover box within both the row and a grid column. No
   // gap reserve: the cell insets already keep adjacent covers apart, and the
-  // SpaceBetween layout absorbs whatever slack remains.
+  // SpaceBetween layout absorbs whatever slack remains. The thumbnail
+  // generator targets the same 0.6 width/height ratio, so 3:5 art fills the
+  // box instead of leaving side slivers.
   card.coverSize.height =
-      std::max(1, std::min((body.height - chromeGaps) / 3 - 12, maxCoverWidth * 3 / 2));
-  card.coverSize.width = std::max(1, card.coverSize.height * 2 / 3);
+      std::max(1, std::min((body.height - chromeGaps) / 3 - 12, maxCoverWidth * 5 / 3));
+  card.coverSize.width = std::max(1, card.coverSize.height * 3 / 5);
   const int coverRowHeight = card.coverSize.height + 12;
   const int featuredHeight = std::min<int>(
       body.height, std::max<int>(coverRowHeight, screen.target().lineHeight(theme.bodyText.font) * (landscape ? 1 : 2) +
