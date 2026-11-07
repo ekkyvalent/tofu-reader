@@ -13,7 +13,7 @@ class MappedInputManager;
 // Menu Style -> Toolbar), painted over the page that is already on screen:
 //
 //  - Toolbar: a bottom sheet holding a chapter scrub row (< capsule >) and a
-//    Contents / Text / More tile row; the page above it stays untouched.
+//    Contents / Text / Sync / More tile row; the page above it stays untouched.
 //  - Panel: a taller bottom sheet with a title, a paged row list (name left,
 //    value right) and the same tile row as a switcher.
 //
@@ -24,6 +24,9 @@ class MappedInputManager;
 // clears the screen: the page stays visible around the chrome.
 class ReaderToolbarUi : public UiAppHost {
  public:
+  // Toolbar slots, in draw order. TOOL_SYNC opens no panel: the reader runs the
+  // progress sync on it, so it never reaches the tool-to-overlay mapping.
+  enum Tool { TOOL_CONTENTS = 0, TOOL_TEXT = 1, TOOL_SYNC = 2, TOOL_MORE = 3, TOOL_COUNT = 4 };
   enum class Event { None = 0, Dismiss = 1, Tool = 2, PrevChapter = 3, NextChapter = 4, Scrub = 5, Row = 6 };
 
   struct Model {
@@ -40,7 +43,7 @@ class ReaderToolbarUi : public UiAppHost {
     std::function<std::string(int)> rowValue;
     void (*rowCheckbox)(void* ctx, int index, freeink::ui::ListItem& item) = nullptr;
     void* rowCheckboxContext = nullptr;
-    // Tile row: the tool in focus (toolbar) / the open panel (panel). 0..2.
+    // Tile row: the tool in focus (toolbar) / the open panel (panel). 0..3.
     int activeTool = 0;
     // Button boards keep the theme's denser list row height (as every other
     // list does there); touch boards use FreeInkUI's finger-sized rows.

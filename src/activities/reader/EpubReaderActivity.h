@@ -64,10 +64,11 @@ class EpubReaderActivity final : public ReaderActivity {
 
   // Toolbar reader menu (SETTINGS.readerMenuStyle == READER_MENU_TOOLBAR): drawn
   // over the page instead of pushing the full-screen list menu. Select opens the
-  // Toolbar; its tools open the Contents/Text/More bottom-sheet panels.
+  // Toolbar; its tools open the Contents/Text/More bottom-sheet panels (Sync runs
+  // the progress sync instead of opening one).
   enum class Overlay { None, Toolbar, Contents, Text, More };
   Overlay overlay = Overlay::None;
-  int focusedTool = 0;  // toolbar tool focus: 0=Contents, 1=Text, 2=More
+  int focusedTool = 0;  // toolbar tool focus: 0=Contents, 1=Text, 2=Sync, 3=More (ReaderToolbarUi::Tool)
   int panelIndex = 0;   // selected row within the active panel
   // Panel list navigation: a tap steps one row, a hold jumps PANEL_HOLD_STEP rows in one go
   // (a contents list runs to hundreds of chapters). One jump per hold, not a repeat -- every

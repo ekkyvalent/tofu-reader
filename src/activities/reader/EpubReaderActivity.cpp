@@ -2728,8 +2728,30 @@ void EpubReaderActivity::handleOverlayInput() {
     }
     requestUpdate();
   };
-  const auto toolOverlay = [](int tool) {
-    return tool == 0 ? Overlay::Contents : (tool == 1 ? Overlay::Text : Overlay::More);
+  const auto toolOverlay = [](ReaderToolbarUi::Tool tool) {
+    switch (tool) {
+      case ReaderToolbarUi::TOOL_CONTENTS:
+        return Overlay::Contents;
+      case ReaderToolbarUi::TOOL_TEXT:
+        return Overlay::Text;
+      case ReaderToolbarUi::TOOL_MORE:
+        return Overlay::More;
+      case ReaderToolbarUi::TOOL_SYNC:
+        break;  // opens no panel; every caller runs the sync before mapping
+      case ReaderToolbarUi::TOOL_COUNT:
+        break;
+    }
+    return Overlay::None;
+  };
+  // Toolbar Sync slot: tear the chrome down without closeOverlayToPage()'s
+  // repaint tail -- the reader activity is about to be replaced by the sync
+  // activity, which paints over whatever is in the framebuffer.
+  const auto startToolbarSync = [this] {
+    overlay = Overlay::None;
+    overlayPopup.dismiss();
+    toolbarUi.reset();
+    discardOverlayPage();
+    launchKOReaderSync();
   };
 
   // Touch first: FreeInkUI routes the frame against the tap targets the last
@@ -2744,7 +2766,11 @@ void EpubReaderActivity::handleOverlayInput() {
         return;
       case ReaderToolbarUi::Event::Tool:
         focusedTool = routed.value;
-        openOverlay(toolOverlay(focusedTool));
+        if (focusedTool == ReaderToolbarUi::TOOL_SYNC) {
+          startToolbarSync();
+          return;
+        }
+        openOverlay(toolOverlay(static_cast<ReaderToolbarUi::Tool>(focusedTool)));
         return;
       case ReaderToolbarUi::Event::PrevChapter:
         gotoSpine(currentSpineIndex - 1);
@@ -2767,19 +2793,23 @@ void EpubReaderActivity::handleOverlayInput() {
       return;
     }
     if (mappedInput.wasReleased(MappedInputManager::Button::Left)) {
-      focusedTool = (focusedTool + 2) % 3;
+      focusedTool = (focusedTool + ReaderToolbarUi::TOOL_COUNT - 1) % ReaderToolbarUi::TOOL_COUNT;
       panelCursorShown = true;
       fastRedraw();
       return;
     }
     if (mappedInput.wasReleased(MappedInputManager::Button::Right)) {
-      focusedTool = (focusedTool + 1) % 3;
+      focusedTool = (focusedTool + 1) % ReaderToolbarUi::TOOL_COUNT;
       panelCursorShown = true;
       fastRedraw();
       return;
     }
     if (mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
-      openOverlay(toolOverlay(focusedTool));
+      if (focusedTool == ReaderToolbarUi::TOOL_SYNC) {
+        startToolbarSync();
+        return;
+      }
+      openOverlay(toolOverlay(static_cast<ReaderToolbarUi::Tool>(focusedTool)));
       return;
     }
     const bool prev = mappedInput.wasReleased(MappedInputManager::Button::Up);
@@ -2887,8 +2917,13 @@ void EpubReaderActivity::handleOverlayInput() {
       dismissPanel();
       return;
     case ReaderToolbarUi::Event::Tool: {
-      // Sheet-bottom tool switcher: hop straight to another panel.
-      const Overlay target = toolOverlay(routed.value);
+      // Sheet-bottom tool switcher: hop straight to another panel. Sync is not
+      // a panel: it launches the progress sync and replaces this activity.
+      if (routed.value == ReaderToolbarUi::TOOL_SYNC) {
+        startToolbarSync();
+        return;
+      }
+      const Overlay target = toolOverlay(static_cast<ReaderToolbarUi::Tool>(routed.value));
       if (target != overlay) {
         focusedTool = routed.value;
         openOverlay(target);
